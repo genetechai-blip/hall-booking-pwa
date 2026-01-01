@@ -11,7 +11,7 @@ type SearchParams = {
   view?: "day" | "week" | "month";
   date?: string;  // YYYY-MM-DD
   start?: string; // YYYY-MM-DD (للأسبوعي)
-  hall?: string;  // optional
+  hall?: string;
 };
 
 function IconButton({
@@ -46,11 +46,7 @@ function IconButton({
 function GearIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="2" />
       <path
         d="M19.4 15a7.9 7.9 0 0 0 .1-1l2-1.5-2-3.5-2.4.6a8.2 8.2 0 0 0-1.7-1L15 6h-6l-.4 2.6a8.2 8.2 0 0 0-1.7 1L4.5 9l-2 3.5 2 1.5a7.9 7.9 0 0 0 .1 1 7.9 7.9 0 0 0-.1 1l-2 1.5 2 3.5 2.4-.6c.5.4 1.1.7 1.7 1L9 22h6l.4-2.6c.6-.3 1.2-.6 1.7-1l2.4.6 2-3.5-2-1.5c.1-.3.1-.6.1-1Z"
         stroke="currentColor"
@@ -99,31 +95,35 @@ export default async function DashboardPage({
     .eq("id", user.id)
     .maybeSingle();
 
-  // تحديد العرض والتواريخ
   const view = searchParams.view ?? "day";
   const today = DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
   const date = searchParams.date ?? today;
   const start = searchParams.start ?? date;
 
-  // الأيام اللي راح نطلبها حسب العرض
-  const range = (() => {
-    if (view === "week") {
-      const s = DateTime.fromISO(start, { zone: BAHRAIN_TZ }).startOf("day");
-      const days = Array.from({ length: 7 }, (_, i) => s.plus({ days: i }).toISODate()!);
-      return { min: days[0], max: s.plus({ days: 7 }).toISODate()!, days };
-    }
-    if (view === "month") {
-      // نخلي السيرفر يرجع occurrences للشهر كله علشان التلوين في الشبكة
-      const ref = DateTime.fromISO(date, { zone: BAHRAIN_TZ });
-      const first = ref.startOf("month").toISODate()!;
-      const after = ref.plus({ months: 1 }).startOf("month").toISODate()!;
-      // days هنا مو مهم للمشهري بس نخليه فارغ
-      return { min: first, max: after, days: [date] };
-    }
-    // day
+  // ✅ نحسب timestamps بدقة (ISO كامل) بدل نصوص يدويّة
+  let rangeStart: DateTime;
+  let rangeEnd: DateTime;
+  let days: string[] = [];
+
+  if (view === "week") {
+    const s = DateTime.fromISO(start, { zone: BAHRAIN_TZ }).startOf("day");
+    rangeStart = s;
+    rangeEnd = s.plus({ days: 7 }); // نهاية الأسبوع (غير شاملة)
+    days = Array.from({ length: 7 }, (_, i) => s.plus({ days: i }).toISODate()!);
+  } else if (view === "month") {
+    const ref = DateTime.fromISO(date, { zone: BAHRAIN_TZ });
+    rangeStart = ref.startOf("month").startOf("day");
+    rangeEnd = ref.plus({ months: 1 }).startOf("month").startOf("day");
+    days = [date]; // المشهري يعتمد على date كمرجع
+  } else {
     const d = DateTime.fromISO(date, { zone: BAHRAIN_TZ }).startOf("day");
-    return { min: d.toISODate()!, max: d.plus({ days: 1 }).toISODate()!, days: [d.toISODate()!] };
-  })();
+    rangeStart = d;
+    rangeEnd = d.plus({ days: 1 });
+    days = [d.toISODate()!];
+  }
+
+  const rangeStartISO = rangeStart.toISO(); // مثال: 2026-01-15T00:00:00.000+03:00
+  const rangeEndISO = rangeEnd.toISO();
 
   // halls + slots
   const [{ data: halls }, { data: slots }] = await Promise.all([
@@ -131,8 +131,8 @@ export default async function DashboardPage({
     sb.from("time_slots").select("id,code,name,start_time,end_time").order("id"),
   ]);
 
-  // occurrences + join bookings + join profiles (علشان الاسم يظهر بدل UUID)
-  const { data: occurrences } = await sb
+  // occurrences + join bookings + join profiles (علشان الاسم)
+  const { data: occurrences, error: occErr } = await sb
     .from("booking_occurrences")
     .select(
       `
@@ -144,9 +144,27 @@ export default async function DashboardPage({
       )
     `
     )
-    .gte("start_ts", `${range.min}T00:00:00+03:00`)
-    .lt("start_ts", `${range.max}T00:00:00+03:00`)
+    .gte("start_ts", rangeStartISO!)
+    .lt("start_ts", rangeEndISO!)
     .order("start_ts", { ascending: true });
+
+  // لو صار خطأ في السيرفر، خلّنا نطلع رسالة واضحة بدل صفحة فاضية
+  if (occErr) {
+    return (
+      <div className="container" style={{ paddingTop: 12 }}>
+        <div className="card" style={{ padding: 12, borderRadius: 18 }}>
+          <strong>صار خطأ في جلب الحجوزات</strong>
+          <div className="small muted" style={{ marginTop: 8 }}>
+            {occErr.message}
+          </div>
+          <div className="small muted" style={{ marginTop: 8 }}>
+            rangeStart: {rangeStartISO} <br />
+            rangeEnd: {rangeEndISO}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container" style={{ paddingTop: 12 }}>
@@ -200,8 +218,8 @@ export default async function DashboardPage({
         <DashboardGrid
           halls={(halls ?? []) as any}
           slots={(slots ?? []) as any}
-          days={range.days}
-          start={start}
+          days={days}
+          start={view === "week" ? start : date}
           occurrences={(occurrences ?? []) as any}
         />
       </div>
