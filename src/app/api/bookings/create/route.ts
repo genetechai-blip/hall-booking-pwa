@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { DateTime } from "luxon";
@@ -84,7 +86,6 @@ export async function POST(req: Request) {
   const { error: occErr } = await supabase.from("booking_occurrences").insert(occ);
 
   if (occErr) {
-    // Rollback header (cascades occurrences if any)
     await supabase.from("bookings").delete().eq("id", booking.id);
 
     const friendly = occErr.message.includes("prevent_hall_overlap")
