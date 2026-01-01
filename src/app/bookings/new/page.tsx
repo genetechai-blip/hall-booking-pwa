@@ -8,7 +8,9 @@ import { DateTime } from "luxon";
 
 const BAHRAIN_TZ = "Asia/Bahrain";
 type SlotCode = "morning" | "afternoon" | "night";
-type Status = "hold" | "confirmed";
+
+// ✅ أضفنا cancelled
+type Status = "hold" | "confirmed" | "cancelled";
 
 function todayISO() {
   return DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
@@ -23,10 +25,24 @@ const TYPE_LABEL: Record<BookingType, string> = {
 };
 
 function applyTemplate(t: BookingType) {
-  if (t === "death") return { pre: 1, event: 2, post: 0, slots: ["morning","afternoon","night"] as SlotCode[] };
-  if (t === "mawlid") return { pre: 1, event: 1, post: 1, slots: ["night"] as SlotCode[] };
-  if (t === "fatiha") return { pre: 0, event: 3, post: 1, slots: ["night"] as SlotCode[] };
-  if (t === "wedding") return { pre: 0, event: 1, post: 1, slots: ["morning","afternoon","night"] as SlotCode[] };
+  if (t === "death")
+    return {
+      pre: 1,
+      event: 2,
+      post: 0,
+      slots: ["morning", "afternoon", "night"] as SlotCode[],
+    };
+  if (t === "mawlid")
+    return { pre: 1, event: 1, post: 1, slots: ["night"] as SlotCode[] };
+  if (t === "fatiha")
+    return { pre: 0, event: 3, post: 1, slots: ["night"] as SlotCode[] };
+  if (t === "wedding")
+    return {
+      pre: 0,
+      event: 1,
+      post: 1,
+      slots: ["morning", "afternoon", "night"] as SlotCode[],
+    };
   return { pre: 0, event: 1, post: 0, slots: ["night"] as SlotCode[] };
 }
 
@@ -61,12 +77,17 @@ export default function NewBookingPage() {
   const [postDays, setPostDays] = useState<number>(0);
 
   const [selectedHallIds, setSelectedHallIds] = useState<number[]>([]);
-  const [selectedSlotCodes, setSelectedSlotCodes] = useState<SlotCode[]>(["night"]);
+  const [selectedSlotCodes, setSelectedSlotCodes] = useState<SlotCode[]>([
+    "night",
+  ]);
 
   useEffect(() => {
     (async () => {
       try {
-        const [hRes, sRes] = await Promise.all([fetch("/api/meta/halls"), fetch("/api/meta/slots")]);
+        const [hRes, sRes] = await Promise.all([
+          fetch("/api/meta/halls"),
+          fetch("/api/meta/slots"),
+        ]);
         if (!hRes.ok || !sRes.ok) throw new Error("META_FETCH_FAILED");
         setHalls(await hRes.json());
         setSlots(await sRes.json());
@@ -78,7 +99,10 @@ export default function NewBookingPage() {
     })();
   }, []);
 
-  const dayOptions = useMemo(() => Array.from({ length: 30 }, (_, i) => i + 1), []);
+  const dayOptions = useMemo(
+    () => Array.from({ length: 30 }, (_, i) => i + 1),
+    []
+  );
   const bufferOptions = useMemo(() => Array.from({ length: 11 }, (_, i) => i), []);
 
   const slotOptions = useMemo(() => {
@@ -87,11 +111,15 @@ export default function NewBookingPage() {
   }, [slots]);
 
   function toggleHall(id: number) {
-    setSelectedHallIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSelectedHallIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   }
 
   function toggleSlot(code: SlotCode) {
-    setSelectedSlotCodes((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]));
+    setSelectedSlotCodes((prev) =>
+      prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]
+    );
   }
 
   function onTypeChange(t: BookingType) {
@@ -155,7 +183,9 @@ export default function NewBookingPage() {
     <div className="container">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h2 style={{ margin: 0 }}>إضافة حجز</h2>
-        <Link className="btn" href="/dashboard">رجوع</Link>
+        <Link className="btn" href="/dashboard">
+          رجوع
+        </Link>
       </div>
 
       <div className="card" style={{ marginTop: 12 }}>
@@ -166,14 +196,25 @@ export default function NewBookingPage() {
             <div className="grid cols2">
               <div>
                 <label className="label">عنوان الحجز</label>
-                <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثال: زواج محمد حسن" />
+                <input
+                  className="input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="مثال: زواج محمد حسن"
+                />
               </div>
 
               <div>
                 <label className="label">نوع الحجز</label>
-                <select className="select" value={bookingType} onChange={(e) => onTypeChange(e.target.value as any)}>
+                <select
+                  className="select"
+                  value={bookingType}
+                  onChange={(e) => onTypeChange(e.target.value as any)}
+                >
                   {Object.keys(TYPE_LABEL).map((k) => (
-                    <option key={k} value={k}>{TYPE_LABEL[k as BookingType]}</option>
+                    <option key={k} value={k}>
+                      {TYPE_LABEL[k as BookingType]}
+                    </option>
                   ))}
                 </select>
                 <div className="small muted" style={{ marginTop: 6 }}>
@@ -185,57 +226,113 @@ export default function NewBookingPage() {
             <div className="grid cols3">
               <div>
                 <label className="label">الحالة (الافتراضي مؤكد)</label>
-                <select className="select" value={status} onChange={(e) => setStatus(e.target.value as any)}>
+                <select
+                  className="select"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as any)}
+                >
                   <option value="confirmed">Confirmed (مؤكد)</option>
                   <option value="hold">Hold (مبدئي)</option>
+                  <option value="cancelled">Cancelled (ملغي)</option>
                 </select>
+                <div className="small muted" style={{ marginTop: 6 }}>
+                  * تقدر تلغي الحجز لاحقاً من صفحة التعديل أيضاً.
+                </div>
               </div>
 
               <div>
                 <label className="label">المبلغ (اختياري)</label>
-                <input className="input" inputMode="decimal" placeholder="مثال: 50" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  placeholder="مثال: 50"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                />
               </div>
 
               <div>
                 <label className="label">العملة</label>
-                <input className="input" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />
+                <input
+                  className="input"
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+                />
               </div>
             </div>
 
             <div className="grid cols2">
               <div>
                 <label className="label">اسم صاحب الحجز (اختياري)</label>
-                <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+                <input
+                  className="input"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                />
               </div>
               <div>
                 <label className="label">رقم الهاتف (اختياري)</label>
-                <input className="input" inputMode="tel" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} />
+                <input
+                  className="input"
+                  inputMode="tel"
+                  value={clientPhone}
+                  onChange={(e) => setClientPhone(e.target.value)}
+                />
               </div>
             </div>
 
             <div className="grid cols2">
               <div>
                 <label className="label">تاريخ الفعالية</label>
-                <input className="input" type="date" value={eventStartDate} onChange={(e) => setEventStartDate(e.target.value)} />
+                <input
+                  className="input"
+                  type="date"
+                  value={eventStartDate}
+                  onChange={(e) => setEventStartDate(e.target.value)}
+                />
               </div>
 
               <div className="grid cols3">
                 <div>
                   <label className="label">أيام الفعالية</label>
-                  <select className="select" value={eventDays} onChange={(e) => setEventDays(Number(e.target.value))}>
-                    {dayOptions.map((n) => <option key={n} value={n}>{n} يوم</option>)}
+                  <select
+                    className="select"
+                    value={eventDays}
+                    onChange={(e) => setEventDays(Number(e.target.value))}
+                  >
+                    {dayOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n} يوم
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="label">تجهيز قبل</label>
-                  <select className="select" value={preDays} onChange={(e) => setPreDays(Number(e.target.value))}>
-                    {bufferOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+                  <select
+                    className="select"
+                    value={preDays}
+                    onChange={(e) => setPreDays(Number(e.target.value))}
+                  >
+                    {bufferOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="label">تنظيف بعد</label>
-                  <select className="select" value={postDays} onChange={(e) => setPostDays(Number(e.target.value))}>
-                    {bufferOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+                  <select
+                    className="select"
+                    value={postDays}
+                    onChange={(e) => setPostDays(Number(e.target.value))}
+                  >
+                    {bufferOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -243,13 +340,23 @@ export default function NewBookingPage() {
 
             <div>
               <label className="label">ملاحظات</label>
-              <textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <textarea
+                className="textarea"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
 
             <div className="grid cols2">
               <div>
                 <label className="label">اختر الصالات</label>
-                <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                <div
+                  className="grid"
+                  style={{
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 10,
+                  }}
+                >
                   {halls.map((h) => (
                     <button
                       key={h.id}
@@ -284,7 +391,13 @@ export default function NewBookingPage() {
             </div>
 
             {error ? (
-              <div className="badge" style={{ borderColor: "rgba(176,0,32,.35)", background: "rgba(176,0,32,.08)" }}>
+              <div
+                className="badge"
+                style={{
+                  borderColor: "rgba(176,0,32,.35)",
+                  background: "rgba(176,0,32,.08)",
+                }}
+              >
                 {error}
               </div>
             ) : null}
