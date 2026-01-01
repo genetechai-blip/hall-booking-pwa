@@ -19,7 +19,6 @@ type Props = {
   start: string;
 };
 
-// ===== Labels =====
 const STATUS_LABEL: Record<BookingStatus, string> = {
   hold: "مبدئي",
   confirmed: "مؤكد",
@@ -31,7 +30,7 @@ const TYPE_LABEL: Record<BookingType, string> = {
   mawlid: "مولد",
   fatiha: "فاتحة",
   wedding: "زواج",
-  special: "مناسبة خاصة",
+  special: "خاصة",
 };
 
 const KIND_LABEL: Record<OccurrenceKind, string> = {
@@ -51,7 +50,6 @@ function normalizeKind(v: unknown): OccurrenceKind {
   return "event";
 }
 
-// ===== UI helpers =====
 function statusTone(status: BookingStatus): React.CSSProperties {
   if (status === "confirmed") return { borderColor: "rgba(220,38,38,.35)", background: "rgba(220,38,38,.08)" };
   if (status === "hold") return { borderColor: "rgba(245,158,11,.35)", background: "rgba(245,158,11,.08)" };
@@ -69,12 +67,7 @@ function makeKey(hallId: number, slotId: number, isoDate: string) {
 function PencilIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M12 20h9"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <path
         d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"
         stroke="currentColor"
@@ -85,12 +78,36 @@ function PencilIcon() {
   );
 }
 
+function ChipButton({
+  active,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      className={`btn ${active ? "primary" : ""}`}
+      onClick={onClick}
+      style={{
+        borderRadius: 999,
+        padding: "10px 12px",
+        fontWeight: 800,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function DashboardGrid({ halls, slots, days, occurrences, start }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // ✅ خلي كل شي “مصدره” الـ URL علشان الأزرار تشتغل دائمًا
-  const view = (sp.get("view") as ViewMode) || "day";
+  // ✅ Default view = month
+  const view = ((sp.get("view") as ViewMode) || "month") as ViewMode;
   const selectedDate = sp.get("date") || start; // day/month reference
   const hallParam = sp.get("hall") || "all";
   const hallFilter: number | "all" = hallParam === "all" ? "all" : Number(hallParam);
@@ -109,19 +126,41 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
     return m;
   })();
 
-  const byDateAny = (() => {
-    const m = new Map<string, { hasConfirmed: boolean; hasHold: boolean; hasCancelled: boolean }>();
+  // ✅ ملخص شهري: نطلع “نوع الفعالية” بدل “مؤكد”
+  const byDateSummary = (() => {
+    const rankStatus: Record<BookingStatus, number> = { confirmed: 3, hold: 2, cancelled: 1 };
+    const rankKind: Record<OccurrenceKind, number> = { event: 3, prep: 2, cleanup: 1 };
+
+    type Best = {
+      status: BookingStatus;
+      kind: OccurrenceKind;
+      bookingType: BookingType;
+    };
+
+    const best = new Map<string, Best>();
+
     for (const o of occurrences) {
       const d = occDateISO(o.start_ts);
-      const b = o.bookings as any;
+      const b: any = o.bookings;
       const st = (b?.status || "hold") as BookingStatus;
-      const prev = m.get(d) || { hasConfirmed: false, hasHold: false, hasCancelled: false };
-      if (st === "confirmed") prev.hasConfirmed = true;
-      else if (st === "hold") prev.hasHold = true;
-      else prev.hasCancelled = true;
-      m.set(d, prev);
+      const kind = normalizeKind((o as any)?.kind);
+      const bookingType = normalizeBookingType(b?.booking_type);
+
+      const cur = best.get(d);
+      if (!cur) {
+        best.set(d, { status: st, kind, bookingType });
+        continue;
+      }
+
+      const curScore = rankStatus[cur.status] * 10 + rankKind[cur.kind];
+      const newScore = rankStatus[st] * 10 + rankKind[kind];
+
+      if (newScore > curScore) {
+        best.set(d, { status: st, kind, bookingType });
+      }
     }
-    return m;
+
+    return best;
   })();
 
   function pushParams(next: Partial<Record<string, string>>) {
@@ -150,8 +189,8 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
     else pushParams({ view: "month", date: DateTime.fromISO(selectedDate, { zone: BAHRAIN_TZ }).plus({ months: 1 }).toISODate()! });
   }
 
-  const prevLabel = view === "day" ? "اليوم السابق" : view === "week" ? "الأسبوع السابق" : "الشهر السابق";
-  const nextLabel = view === "day" ? "اليوم القادم" : view === "week" ? "الأسبوع القادم" : "الشهر القادم";
+  const prevLabel = view === "day" ? "السابق" : view === "week" ? "السابق" : "السابق";
+  const nextLabel = view === "day" ? "القادم" : view === "week" ? "القادم" : "القادم";
 
   function switchView(nextView: ViewMode) {
     if (nextView === "day") pushParams({ view: "day", date: selectedDate });
@@ -177,7 +216,7 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
           const bookingType = normalizeBookingType(b?.booking_type);
           const kind = normalizeKind((o as any)?.kind);
 
-          const createdByName = b?.profiles?.full_name || b?.created_by_name || null; // ✅ الاسم من join
+          const createdByName = b?.profiles?.full_name || null;
           const amount = b?.amount as number | null | undefined;
 
           return (
@@ -201,7 +240,7 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
                     href={`/bookings/${o.booking_id}/edit`}
                     style={{
                       padding: "8px 10px",
-                      borderRadius: 14,
+                      borderRadius: 999,
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 6,
@@ -253,7 +292,7 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
               <div key={slot.id} className="card" style={{ padding: 12, borderRadius: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontWeight: 800 }}>{slot.name}</div>
+                    <div style={{ fontWeight: 900 }}>{slot.name}</div>
                     <div className="small muted">{slot.start_time} - {slot.end_time}</div>
                   </div>
                   <span className="badge">{list.length ? "محجوز" : "متاح"}</span>
@@ -283,7 +322,7 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
             <div key={d} className="card" style={{ padding: 12, borderRadius: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                 <strong>{formatISODateHuman(d)}</strong>
-                <button className="btn" onClick={() => pushParams({ view: "day", date: d })}>
+                <button className="btn" onClick={() => pushParams({ view: "day", date: d })} style={{ borderRadius: 999 }}>
                   عرض يومي
                 </button>
               </div>
@@ -354,23 +393,27 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
 
           {cells.map((d) => {
             const inMonth = DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month === ref.month;
-            const dot = byDateAny.get(d);
 
-            const bg = dot?.hasConfirmed
-              ? "rgba(220,38,38,.10)"
-              : dot?.hasHold
-              ? "rgba(245,158,11,.10)"
-              : dot?.hasCancelled
-              ? "rgba(107,114,128,.10)"
-              : "transparent";
+            const best = byDateSummary.get(d);
+            const bg =
+              best?.status === "confirmed"
+                ? "rgba(220,38,38,.10)"
+                : best?.status === "hold"
+                ? "rgba(245,158,11,.10)"
+                : best?.status === "cancelled"
+                ? "rgba(107,114,128,.10)"
+                : "transparent";
 
-            const border = dot?.hasConfirmed
-              ? "rgba(220,38,38,.35)"
-              : dot?.hasHold
-              ? "rgba(245,158,11,.35)"
-              : dot?.hasCancelled
-              ? "rgba(107,114,128,.35)"
-              : "rgba(0,0,0,.08)";
+            const border =
+              best?.status === "confirmed"
+                ? "rgba(220,38,38,.35)"
+                : best?.status === "hold"
+                ? "rgba(245,158,11,.35)"
+                : best?.status === "cancelled"
+                ? "rgba(107,114,128,.35)"
+                : "rgba(0,0,0,.08)";
+
+            const label = best ? TYPE_LABEL[best.bookingType] : " ";
 
             return (
               <button
@@ -387,18 +430,12 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
                 }}
               >
                 <div style={{ fontWeight: 900 }}>{DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}</div>
-                <div className="small muted" style={{ marginTop: 4 }}>
-                  {dot?.hasConfirmed ? "مؤكد" : dot?.hasHold ? "مبدئي" : dot?.hasCancelled ? "ملغي" : " "}
+                <div className="small muted" style={{ marginTop: 4, fontWeight: 700 }}>
+                  {label}
                 </div>
               </button>
             );
           })}
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-          <span className="badge">Confirmed = أحمر</span>
-          <span className="badge">Hold = برتقالي</span>
-          <span className="badge">Cancelled = رمادي</span>
         </div>
       </div>
     );
@@ -406,40 +443,44 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
 
   return (
     <div className="grid" style={{ gap: 12 }}>
-      {/* Controls (مرتب وحديث ومناسب للموبايل) */}
-      <div className="card" style={{ padding: 12, borderRadius: 18 }}>
+      {/* Controls - مرتب وحديث */}
+      <div
+        className="card"
+        style={{
+          padding: 12,
+          borderRadius: 18,
+          overflow: "hidden",
+        }}
+      >
         <div className="grid" style={{ gap: 12 }}>
-          {/* View buttons */}
+          {/* View tabs */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-            <button className={`btn ${view === "day" ? "primary" : ""}`} onClick={() => switchView("day")}>
-              يومي
-            </button>
-            <button className={`btn ${view === "week" ? "primary" : ""}`} onClick={() => switchView("week")}>
-              أسبوعي
-            </button>
-            <button className={`btn ${view === "month" ? "primary" : ""}`} onClick={() => switchView("month")}>
-              شهري
-            </button>
+            <ChipButton active={view === "day"} onClick={() => switchView("day")}>يومي</ChipButton>
+            <ChipButton active={view === "week"} onClick={() => switchView("week")}>أسبوعي</ChipButton>
+            <ChipButton active={view === "month"} onClick={() => switchView("month")}>شهري</ChipButton>
           </div>
 
           {/* Date */}
-          <div>
+          <div style={{ minWidth: 0 }}>
             <label className="label">اختر تاريخ</label>
             <input
               className="input"
               type="date"
               value={selectedDate}
               onChange={(e) => pushParams({ date: e.target.value, start: e.target.value })}
+              dir="ltr"
               style={{
                 width: "100%",
-                maxWidth: 520,
+                maxWidth: "100%",
+                minWidth: 0,
                 boxSizing: "border-box",
+                borderRadius: 16,
               }}
             />
           </div>
 
           {/* Hall filter */}
-          <div>
+          <div style={{ minWidth: 0 }}>
             <label className="label">فلتر الصالة</label>
             <select
               className="select"
@@ -447,8 +488,10 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
               onChange={(e) => pushParams({ hall: e.target.value })}
               style={{
                 width: "100%",
-                maxWidth: 520,
+                maxWidth: "100%",
+                minWidth: 0,
                 boxSizing: "border-box",
+                borderRadius: 16,
               }}
             >
               <option value="all">الكل</option>
@@ -460,18 +503,11 @@ export default function DashboardGrid({ halls, slots, days, occurrences, start }
             </select>
           </div>
 
-          {/* Nav buttons */}
+          {/* Prev/Today/Next */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-            <button className="btn" onClick={goPrev}>{prevLabel}</button>
-            <button className="btn" onClick={goToday}>اليوم</button>
-            <button className="btn" onClick={goNext}>{nextLabel}</button>
-          </div>
-
-          {/* Legend */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <span className="badge">Confirmed = أحمر</span>
-            <span className="badge">Hold = برتقالي</span>
-            <span className="badge">Cancelled = رمادي</span>
+            <ChipButton onClick={goPrev}>{prevLabel}</ChipButton>
+            <ChipButton onClick={goToday}>اليوم</ChipButton>
+            <ChipButton onClick={goNext}>{nextLabel}</ChipButton>
           </div>
         </div>
       </div>

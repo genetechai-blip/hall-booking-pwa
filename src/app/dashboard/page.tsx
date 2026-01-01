@@ -88,6 +88,16 @@ export default async function DashboardPage({
 
   if (!user) redirect("/login");
 
+  // ✅ Default = شهري + تاريخ اليوم إذا ما فيه view/date
+  const today = DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
+  if (!searchParams.view) {
+    redirect(`/dashboard?view=month&date=${encodeURIComponent(searchParams.date ?? today)}`);
+  }
+
+  const view = searchParams.view ?? "month";
+  const date = searchParams.date ?? today;
+  const start = searchParams.start ?? date;
+
   // profile
   const { data: myProfile } = await sb
     .from("profiles")
@@ -95,12 +105,7 @@ export default async function DashboardPage({
     .eq("id", user.id)
     .maybeSingle();
 
-  const view = searchParams.view ?? "day";
-  const today = DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
-  const date = searchParams.date ?? today;
-  const start = searchParams.start ?? date;
-
-  // ✅ نحسب timestamps بدقة (ISO كامل) بدل نصوص يدويّة
+  // ✅ range ISO مضبوط
   let rangeStart: DateTime;
   let rangeEnd: DateTime;
   let days: string[] = [];
@@ -108,13 +113,13 @@ export default async function DashboardPage({
   if (view === "week") {
     const s = DateTime.fromISO(start, { zone: BAHRAIN_TZ }).startOf("day");
     rangeStart = s;
-    rangeEnd = s.plus({ days: 7 }); // نهاية الأسبوع (غير شاملة)
+    rangeEnd = s.plus({ days: 7 });
     days = Array.from({ length: 7 }, (_, i) => s.plus({ days: i }).toISODate()!);
   } else if (view === "month") {
     const ref = DateTime.fromISO(date, { zone: BAHRAIN_TZ });
     rangeStart = ref.startOf("month").startOf("day");
     rangeEnd = ref.plus({ months: 1 }).startOf("month").startOf("day");
-    days = [date]; // المشهري يعتمد على date كمرجع
+    days = [date];
   } else {
     const d = DateTime.fromISO(date, { zone: BAHRAIN_TZ }).startOf("day");
     rangeStart = d;
@@ -122,16 +127,14 @@ export default async function DashboardPage({
     days = [d.toISODate()!];
   }
 
-  const rangeStartISO = rangeStart.toISO(); // مثال: 2026-01-15T00:00:00.000+03:00
-  const rangeEndISO = rangeEnd.toISO();
+  const rangeStartISO = rangeStart.toISO()!;
+  const rangeEndISO = rangeEnd.toISO()!;
 
-  // halls + slots
   const [{ data: halls }, { data: slots }] = await Promise.all([
     sb.from("halls").select("id,name").order("id"),
     sb.from("time_slots").select("id,code,name,start_time,end_time").order("id"),
   ]);
 
-  // occurrences + join bookings + join profiles (علشان الاسم)
   const { data: occurrences, error: occErr } = await sb
     .from("booking_occurrences")
     .select(
@@ -144,21 +147,18 @@ export default async function DashboardPage({
       )
     `
     )
-    .gte("start_ts", rangeStartISO!)
-    .lt("start_ts", rangeEndISO!)
+    .gte("start_ts", rangeStartISO)
+    .lt("start_ts", rangeEndISO)
     .order("start_ts", { ascending: true });
 
-  // لو صار خطأ في السيرفر، خلّنا نطلع رسالة واضحة بدل صفحة فاضية
   if (occErr) {
     return (
       <div className="container" style={{ paddingTop: 12 }}>
         <div className="card" style={{ padding: 12, borderRadius: 18 }}>
           <strong>صار خطأ في جلب الحجوزات</strong>
+          <div className="small muted" style={{ marginTop: 8 }}>{occErr.message}</div>
           <div className="small muted" style={{ marginTop: 8 }}>
-            {occErr.message}
-          </div>
-          <div className="small muted" style={{ marginTop: 8 }}>
-            rangeStart: {rangeStartISO} <br />
+            rangeStart: {rangeStartISO}<br />
             rangeEnd: {rangeEndISO}
           </div>
         </div>
@@ -169,24 +169,8 @@ export default async function DashboardPage({
   return (
     <div className="container" style={{ paddingTop: 12 }}>
       {/* App Bar */}
-      <div
-        className="card"
-        style={{
-          padding: 12,
-          borderRadius: 18,
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-            flexWrap: "wrap",
-          }}
-        >
+      <div className="card" style={{ padding: 12, borderRadius: 18, display: "grid", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <div style={{ minWidth: 160 }}>
             <div style={{ fontSize: 20, fontWeight: 800 }}>جدول الحجوزات</div>
             <div className="small muted" style={{ marginTop: 4 }}>
@@ -213,7 +197,6 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* Grid */}
       <div style={{ marginTop: 12 }}>
         <DashboardGrid
           halls={(halls ?? []) as any}
