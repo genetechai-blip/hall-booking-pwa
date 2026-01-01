@@ -16,19 +16,19 @@ type Body = {
   client_phone?: string | null;
   notes?: string | null;
 
-  status?: BookingStatus; // default confirmed
-  booking_type?: BookingType;
+  status: BookingStatus;
+  booking_type: BookingType;
 
   payment_amount?: number | null;
   currency?: string;
 
-  event_start_date: string; // YYYY-MM-DD
-  event_days: number; // 1..30
-  pre_days?: number; // 0..10
-  post_days?: number; // 0..10
+  event_start_date: string;
+  event_days: number;
+  pre_days: number;
+  post_days: number;
 
   hall_ids: number[];
-  slot_codes: SlotCode[]; // event slots only
+  slot_codes: SlotCode[];
 };
 
 function toUtcIsoFromLocalDayTime(dayISO: string, timeHHMMSS: string) {
@@ -36,10 +36,13 @@ function toUtcIsoFromLocalDayTime(dayISO: string, timeHHMMSS: string) {
   return dt.toUTC().toISO({ suppressMilliseconds: true })!;
 }
 
-export async function POST(req: Request) {
+export async function POST(req: Request, { params }: { params: { id: string } }) {
   const supabase = supabaseServer();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return NextResponse.json({ error: "UNAUTH" }, { status: 401 });
+
+  const bookingId = Number(params.id);
+  if (!Number.isFinite(bookingId)) return NextResponse.json({ error: "BAD_ID" }, { status: 400 });
 
   const body = (await req.json()) as Body;
 
@@ -58,9 +61,7 @@ export async function POST(req: Request) {
   if (preDays < 0 || preDays > 10) return NextResponse.json({ error: "PRE_DAYS_INVALID" }, { status: 400 });
   if (postDays < 0 || postDays > 10) return NextResponse.json({ error: "POST_DAYS_INVALID" }, { status: 400 });
 
-  // slots needed:
-  // - for event: only selected slot_codes
-  // - for prep/cleanup: ALL slots (to block hall fully)
+  // load slots
   const { data: allSlots, error: allSlotsErr } = await supabase
     .from("time_slots")
     .select("id,code,start_time,end_time")
@@ -70,9 +71,6 @@ export async function POST(req: Request) {
   const eventSlots = allSlots!.filter((s) => body.slot_codes.includes(s.code as any));
   if (eventSlots.length === 0) return NextResponse.json({ error: "NO_EVENT_SLOTS" }, { status: 400 });
 
-  const booking_type = (body.booking_type ?? "special") as any;
-  const status = (body.status ?? "confirmed") as any;
-
   const payment_amount =
     body.payment_amount === undefined || body.payment_amount === null || body.payment_amount === ("" as any)
       ? null
@@ -80,19 +78,18 @@ export async function POST(req: Request) {
 
   const currency = (body.currency ?? "BHD").toUpperCase();
 
-  // create booking header
-  const { data: booking, error: bookingErr } = await supabase
+  // 1) update booking header
+  const { error: updErr } = await supabase
     .from("bookings")
-    .insert({
+    .update({
       title: body.title.trim(),
       client_name: body.client_name ?? null,
       client_phone: body.client_phone ?? null,
       notes: body.notes ?? null,
-      status,
-      booking_type,
+      status: body.status,
+      booking_type: body.booking_type,
       payment_amount,
       currency,
-      created_by: userData.user.id,
 
       event_start_date: body.event_start_date,
       event_days: eventDays,
@@ -102,12 +99,15 @@ export async function POST(req: Request) {
       hall_ids: body.hall_ids,
       event_slot_codes: body.slot_codes,
     })
-    .select("id")
-    .single();
+    .eq("id", bookingId);
 
-  if (bookingErr) return NextResponse.json({ error: bookingErr.message }, { status: 400 });
+  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 400 });
 
-  // build occurrences
+  // 2) delete old occurrences
+  const { error: delErr } = await supabase.from("booking_occurrences").delete().eq("booking_id", bookingId);
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 400 });
+
+  // 3) insert new occurrences
   const occ: any[] = [];
   const eventStart = DateTime.fromISO(body.event_start_date, { zone: BAHRAIN_TZ }).startOf("day");
   const totalDays = preDays + eventDays + postDays;
@@ -121,12 +121,12 @@ export async function POST(req: Request) {
     if (d < preDays) kind = "prep";
     else if (d >= preDays + eventDays) kind = "cleanup";
 
-    const slotsToUse = kind === "event" ? eventSlots : allSlots; // prep/cleanup block all 3
+    const slotsToUse = kind === "event" ? eventSlots : allSlots;
 
     for (const hall_id of body.hall_ids) {
       for (const s of slotsToUse) {
         occ.push({
-          booking_id: booking.id,
+          booking_id: bookingId,
           hall_id,
           slot_id: s.id,
           start_ts: toUtcIsoFromLocalDayTime(dayISO, s.start_time),
@@ -137,17 +137,15 @@ export async function POST(req: Request) {
     }
   }
 
-  const { error: occErr } = await supabase.from("booking_occurrences").insert(occ);
+  const { error: insErr } = await supabase.from("booking_occurrences").insert(occ);
 
-  if (occErr) {
-    await supabase.from("bookings").delete().eq("id", booking.id);
-
-    const friendly = occErr.message.includes("prevent_hall_overlap")
+  if (insErr) {
+    const friendly = insErr.message.includes("prevent_hall_overlap")
       ? "تعارض: واحدة من الصالات محجوزة في نفس الفترة."
-      : occErr.message;
+      : insErr.message;
 
     return NextResponse.json({ error: friendly }, { status: 409 });
   }
 
-  return NextResponse.json({ ok: true, booking_id: booking.id });
+  return NextResponse.json({ ok: true });
 }

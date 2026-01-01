@@ -1,49 +1,76 @@
-export type Hall = {
-  id: number;
-  name: string;
-};
+// src/lib/types.ts
+
+// ===== enums / unions =====
+export type UserRole = "admin" | "staff" | "viewer";
+export type BookingStatus = "hold" | "confirmed" | "cancelled";
+
+export type PaymentStatus = "unpaid" | "deposit" | "paid";
+
+// أنواع الحجز (حسب طلبك)
+export const BOOKING_TYPES = ["death", "mawlid", "fatiha", "wedding", "special"] as const;
+export type BookingType = (typeof BOOKING_TYPES)[number];
+
+// نوع “الظهور” داخل الجدول: هل هو يوم فعالية أو تجهيز أو تنظيف
+export const OCCURRENCE_KINDS = ["event", "prep", "cleanup"] as const;
+export type OccurrenceKind = (typeof OCCURRENCE_KINDS)[number];
+
+// الفترات
+export type SlotCode = "morning" | "afternoon" | "night";
+
+// ===== base tables =====
+export type Hall = { id: number; name: string };
 
 export type Slot = {
   id: number;
-  code: "morning" | "afternoon" | "night";
+  code: SlotCode;
   name: string;
-  start_time: string;
-  end_time: string;
+  start_time: string; // "08:00"
+  end_time: string;   // "12:00"
 };
 
 export type Profile = {
-  id: string;
+  id: string; // uuid
   full_name: string | null;
-  role: "admin" | "staff" | "viewer";
+  role: UserRole;
   active: boolean;
+  created_at: string; // ISO
 };
 
-export type Booking = {
+// ===== bookings =====
+export type BookingRow = {
   id: number;
   title: string;
+
   client_name: string | null;
   client_phone: string | null;
   notes: string | null;
-  status: "hold" | "confirmed" | "cancelled";
-  payment_status: "unpaid" | "deposit" | "paid";
-  created_by: string;
 
-  event_start_date: string | null; // YYYY-MM-DD
-  event_days: number;
-  pre_days: number;
-  post_days: number;
+  status: BookingStatus;
 
-  profiles?: { full_name: string | null } | null; // join
+  // النظام القديم كان payment_status نص
+  // النظام الجديد: مبلغ اختياري (تقدر تخليه null)
+  payment_status?: string; // legacy (اختياري)
+  amount?: number | null;  // new (اختياري)
+
+  booking_type?: BookingType | null;
+
+  created_at: string;
+  created_by: string;          // uuid
+  created_by_name?: string | null; // إذا سويت join على profiles
 };
 
+// ===== booking occurrences =====
 export type OccurrenceRow = {
   id: number;
-  booking_id: number;
   hall_id: number;
   slot_id: number;
-  start_ts: string;
-  end_ts: string;
-  kind: "event" | "prep" | "cleanup";
+  start_ts: string; // ISO timestamptz
+  end_ts: string;   // ISO timestamptz
+  booking_id: number;
 
-  bookings?: Booking | null;
+  // جديد (اختياري) للتمييز داخل نفس الحجز
+  kind?: OccurrenceKind | null;
+
+  // join: bookings
+  bookings?: BookingRow | null;
 };

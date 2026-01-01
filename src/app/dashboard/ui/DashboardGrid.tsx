@@ -1,410 +1,473 @@
+// src/app/dashboard/ui/DashboardGrid.tsx
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DateTime } from "luxon";
-import type { Hall, Slot, OccurrenceRow } from "@/lib/types";
 
-const BAHRAIN_TZ = "Asia/Bahrain";
+import type { Hall, Slot, OccurrenceRow, BookingStatus, BookingType, OccurrenceKind } from "@/lib/types";
+import { BOOKING_TYPES } from "@/lib/types";
+import { BAHRAIN_TZ, formatISODateHuman, addDaysISODate } from "@/lib/time";
 
 type ViewMode = "day" | "week" | "month";
 
-function todayISO() {
-  return DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
+type Props = {
+  halls: Hall[];
+  slots: Slot[];
+  days: string[]; // ISO date strings coming from server (for current view range)
+  occurrences: OccurrenceRow[];
+  start: string; // ISO anchor date
+};
+
+// ===== Labels =====
+const STATUS_LABEL: Record<BookingStatus, string> = {
+  hold: "مبدئي",
+  confirmed: "مؤكد",
+  cancelled: "ملغي",
+};
+
+const TYPE_LABEL: Record<BookingType, string> = {
+  death: "وفاة",
+  mawlid: "مولد",
+  fatiha: "فاتحة",
+  wedding: "زواج",
+  special: "مناسبة خاصة",
+};
+
+const KIND_LABEL: Record<OccurrenceKind, string> = {
+  event: "الفعالية",
+  prep: "تجهيز",
+  cleanup: "تنظيف",
+};
+
+const DEFAULT_BOOKING_TYPE: BookingType = "special";
+function normalizeBookingType(v: unknown): BookingType {
+  if (typeof v !== "string") return DEFAULT_BOOKING_TYPE;
+  if ((BOOKING_TYPES as readonly string[]).includes(v)) return v as BookingType;
+  return DEFAULT_BOOKING_TYPE;
 }
 
-function fmtDay(iso: string) {
-  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).toFormat("ccc dd LLL yyyy");
+function normalizeKind(v: unknown): OccurrenceKind {
+  if (v === "prep" || v === "cleanup" || v === "event") return v;
+  return "event";
 }
 
-function weekStart(iso: string) {
-  const d = DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).startOf("day");
-  const weekday = d.weekday; // Mon=1..Sun=7
-  const daysFromSun = weekday === 7 ? 0 : weekday;
-  return d.minus({ days: daysFromSun }).toISODate()!;
+// ===== UI helpers =====
+function statusTone(status: BookingStatus): React.CSSProperties {
+  // ألوان خفيفة (شفافة) مثل ما تبي
+  if (status === "confirmed") return { borderColor: "rgba(220,38,38,.35)", background: "rgba(220,38,38,.08)" };
+  if (status === "hold") return { borderColor: "rgba(245,158,11,.35)", background: "rgba(245,158,11,.08)" };
+  return { borderColor: "rgba(107,114,128,.35)", background: "rgba(107,114,128,.08)" };
 }
 
-function addDays(iso: string, n: number) {
-  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).plus({ days: n }).toISODate()!;
+function occDateISO(startTs: string) {
+  return DateTime.fromISO(startTs).setZone(BAHRAIN_TZ).toISODate()!;
 }
 
-function occKey(hallId: number, slotId: number, isoDate: string) {
+function makeKey(hallId: number, slotId: number, isoDate: string) {
   return `${hallId}|${slotId}|${isoDate}`;
 }
 
-function bookingClass(status: string) {
-  if (status === "confirmed") return "booking-confirmed";
-  if (status === "hold") return "booking-hold";
-  if (status === "cancelled") return "booking-cancelled";
-  return "";
-}
-
-function kindBadge(kind: string) {
-  if (kind === "event") return "فعالية";
-  if (kind === "prep") return "تجهيز";
-  if (kind === "cleanup") return "تنظيف";
-  return kind;
-}
-
-function kindTone(kind: string) {
-  if (kind === "event") return { borderColor: "rgba(0,0,0,.15)" };
-  if (kind === "prep") return { borderColor: "rgba(33,150,243,.35)", background: "rgba(33,150,243,.06)" };
-  if (kind === "cleanup") return { borderColor: "rgba(76,175,80,.35)", background: "rgba(76,175,80,.06)" };
-  return {};
-}
-
-export default function DashboardGrid(props: {
-  halls: Hall[];
-  slots: Slot[];
-  days: string[];
-  start: string;
-  anchorDate: string;
-  occurrences: OccurrenceRow[];
-}) {
+// ===== Component =====
+export default function DashboardGrid({ halls, slots, days, occurrences, start }: Props) {
   const router = useRouter();
-  const dateInputRef = useRef<HTMLInputElement | null>(null);
+  const sp = useSearchParams();
 
-  const [mode, setMode] = useState<ViewMode>("day");
-  const [selectedDate, setSelectedDate] = useState<string>(() => props.anchorDate || props.days[0]);
+  const initialView = (sp.get("view") as ViewMode) || "day";
+  const [view, setView] = useState<ViewMode>(initialView);
+
   const [hallFilter, setHallFilter] = useState<number | "all">("all");
 
-  const today = todayISO();
+  // day selected (for day & month view)
+  const selectedDate = sp.get("date") || start;
 
-  // map occurrences by (hall,slot,day)
   const occMap = useMemo(() => {
     const m = new Map<string, OccurrenceRow[]>();
-    for (const o of props.occurrences) {
-      const d = DateTime.fromISO(o.start_ts).setZone(BAHRAIN_TZ).toISODate()!;
-      const k = occKey(o.hall_id, o.slot_id, d);
+    for (const o of occurrences) {
+      const d = occDateISO(o.start_ts);
+      const k = makeKey(o.hall_id, o.slot_id, d);
       const arr = m.get(k) || [];
       arr.push(o);
       m.set(k, arr);
     }
     return m;
-  }, [props.occurrences]);
+  }, [occurrences]);
+
+  const byDateAny = useMemo(() => {
+    // هل اليوم فيه أي حجز (للمشهري)
+    const m = new Map<string, { hasConfirmed: boolean; hasHold: boolean; hasCancelled: boolean }>();
+    for (const o of occurrences) {
+      const d = occDateISO(o.start_ts);
+      const b = o.bookings;
+      const st = (b?.status || "hold") as BookingStatus;
+      const prev = m.get(d) || { hasConfirmed: false, hasHold: false, hasCancelled: false };
+      if (st === "confirmed") prev.hasConfirmed = true;
+      else if (st === "hold") prev.hasHold = true;
+      else prev.hasCancelled = true;
+      m.set(d, prev);
+    }
+    return m;
+  }, [occurrences]);
 
   const visibleHalls = useMemo(() => {
-    if (hallFilter === "all") return props.halls;
-    return props.halls.filter((h) => h.id === hallFilter);
-  }, [props.halls, hallFilter]);
+    if (hallFilter === "all") return halls;
+    return halls.filter((h) => h.id === hallFilter);
+  }, [halls, hallFilter]);
 
-  function goToDate(iso: string) {
-    setSelectedDate(iso);
-    router.push(`/dashboard?date=${iso}`);
+  function pushParams(next: Partial<Record<string, string>>) {
+    const params = new URLSearchParams(sp.toString());
+    Object.entries(next).forEach(([k, v]) => {
+      if (!v) params.delete(k);
+      else params.set(k, v);
+    });
+    router.push(`/dashboard?${params.toString()}`);
   }
 
-  function openDatePicker() {
-    dateInputRef.current?.showPicker?.();
-    dateInputRef.current?.focus();
-    dateInputRef.current?.click();
+  // تنقّل حسب نوع العرض
+  function goPrev() {
+    if (view === "day") pushParams({ view: "day", date: addDaysISODate(selectedDate, -1) });
+    else if (view === "week") pushParams({ view: "week", start: addDaysISODate(start, -7) });
+    else pushParams({ view: "month", date: DateTime.fromISO(selectedDate, { zone: BAHRAIN_TZ }).minus({ months: 1 }).toISODate()! });
   }
 
-  // ===== Monthly grid =====
-  const monthInfo = useMemo(() => {
-    const d = DateTime.fromISO(selectedDate, { zone: BAHRAIN_TZ }).startOf("day");
-    const monthStart = d.startOf("month");
-    const monthEnd = d.endOf("month");
+  function goNext() {
+    if (view === "day") pushParams({ view: "day", date: addDaysISODate(selectedDate, 1) });
+    else if (view === "week") pushParams({ view: "week", start: addDaysISODate(start, 7) });
+    else pushParams({ view: "month", date: DateTime.fromISO(selectedDate, { zone: BAHRAIN_TZ }).plus({ months: 1 }).toISODate()! });
+  }
 
-    // make grid start on Sunday
-    const weekday = monthStart.weekday; // Mon=1..Sun=7
-    const padBefore = weekday === 7 ? 0 : weekday; // Sun=0
-    const gridStart = monthStart.minus({ days: padBefore });
+  function goToday() {
+    const today = DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
+    pushParams({ date: today, start: today });
+  }
 
-    // 6 weeks grid (42 cells)
-    const cells = Array.from({ length: 42 }, (_, i) => gridStart.plus({ days: i }));
-    return { monthStart, monthEnd, cells };
-  }, [selectedDate]);
-
-  // status per day (for monthly)
-  const dayStatusMap = useMemo(() => {
-    const map = new Map<string, { top: "confirmed" | "hold" | "cancelled" | "none"; hasEvent: boolean; hasPrepCleanup: boolean }>();
-
-    // decide which halls to include in monthly coloring
-    const allowedHallIds = hallFilter === "all" ? null : new Set([hallFilter]);
-
-    for (const o of props.occurrences) {
-      if (allowedHallIds && !allowedHallIds.has(o.hall_id)) continue;
-
-      const day = DateTime.fromISO(o.start_ts).setZone(BAHRAIN_TZ).toISODate()!;
-      const status = (o.bookings?.status || "hold") as any;
-      const kind = o.kind;
-
-      const cur = map.get(day) || { top: "none", hasEvent: false, hasPrepCleanup: false };
-
-      if (kind === "event") cur.hasEvent = true;
-      if (kind === "prep" || kind === "cleanup") cur.hasPrepCleanup = true;
-
-      // priority confirmed > hold > cancelled > none
-      const rank: Record<string, number> = { confirmed: 3, hold: 2, cancelled: 1, none: 0 };
-      if (rank[status] > rank[cur.top]) cur.top = status;
-
-      map.set(day, cur);
+  // ===== Render blocks =====
+  function renderSlotCard(list: OccurrenceRow[], hallId: number, slotId: number, d: string) {
+    if (list.length === 0) {
+      return (
+        <div className="card" style={{ padding: 12, borderRadius: 14 }}>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <span className="badge">متاح</span>
+            <span className="small muted">{formatISODateHuman(d)}</span>
+          </div>
+          <div className="small muted" style={{ marginTop: 6 }}>
+            لا توجد حجوزات في هذه الفترة.
+          </div>
+        </div>
+      );
     }
-    return map;
-  }, [props.occurrences, hallFilter]);
 
-  function monthCellStyle(dayISO: string) {
-    const s = dayStatusMap.get(dayISO);
-    if (!s) return {};
+    return (
+      <div className="grid" style={{ gap: 8 }}>
+        {list.map((o) => {
+          const b = o.bookings;
+          const status = (b?.status || "hold") as BookingStatus;
+          const bookingType = normalizeBookingType((b as any)?.booking_type);
+          const kind = normalizeKind((o as any)?.kind);
 
-    // If only prep/cleanup and no event, use subtle gray/blue-green
-    if (!s.hasEvent && s.hasPrepCleanup) {
-      return { background: "rgba(120,120,120,0.08)", borderColor: "rgba(120,120,120,0.25)" };
-    }
-    if (s.top === "confirmed") return { background: "rgba(176,0,32,0.10)", borderColor: "rgba(176,0,32,0.30)" };
-    if (s.top === "hold") return { background: "rgba(255,140,0,0.14)", borderColor: "rgba(255,140,0,0.30)" };
-    if (s.top === "cancelled") return { background: "rgba(120,120,120,0.10)", borderColor: "rgba(120,120,120,0.30)" };
-    return {};
+          const createdBy =
+            (b as any)?.created_by_name ||
+            (b as any)?.created_by ||
+            "";
+
+          const amount = (b as any)?.amount as number | null | undefined;
+
+          return (
+            <div
+              key={o.id}
+              className="card"
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                ...statusTone(status),
+              }}
+            >
+              <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <strong style={{ fontSize: 14 }}>
+                  {b?.title || `حجز #${o.booking_id}`}
+                </strong>
+
+                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                  <span className="badge">{STATUS_LABEL[status]}</span>
+                  <Link className="btn" style={{ padding: "6px 10px" }} href={`/bookings/${o.booking_id}/edit`}>
+                    تعديل
+                  </Link>
+                </div>
+              </div>
+
+              <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 6 }}>
+                <span className="badge">{TYPE_LABEL[bookingType]}</span>
+                <span className="badge">{KIND_LABEL[kind]}</span>
+                {createdBy ? <span className="badge">أضيف بواسطة: {createdBy}</span> : null}
+                {typeof amount === "number" && amount > 0 ? <span className="badge">المبلغ: {amount}</span> : null}
+              </div>
+
+              <div className="small muted" style={{ marginTop: 8 }}>
+                {b?.client_name ? `العميل: ${b.client_name}` : ""}
+                {b?.client_phone ? ` • ${b.client_phone}` : ""}
+              </div>
+
+              {b?.notes ? (
+                <div className="small" style={{ marginTop: 8 }}>
+                  {b.notes}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
   }
 
-  const prevWeek = weekStart(addDays(props.start, -7));
-  const nextWeek = weekStart(addDays(props.start, 7));
+  function renderDay(h: Hall, d: string) {
+    return (
+      <div key={`${h.id}-${d}`} className="card" style={{ padding: 12, borderRadius: 16 }}>
+        <div className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <strong>{h.name}</strong>
+          <span className="badge">{formatISODateHuman(d)}</span>
+        </div>
+
+        <div className="grid" style={{ gap: 10, marginTop: 10 }}>
+          {slots.map((slot) => {
+            const list = occMap.get(makeKey(h.id, slot.id, d)) || [];
+            return (
+              <div key={slot.id} className="card" style={{ padding: 12, borderRadius: 16 }}>
+                <div className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div>
+                    <div><strong>{slot.name}</strong></div>
+                    <div className="small muted">{slot.start_time} - {slot.end_time}</div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  {renderSlotCard(list, h.id, slot.id, d)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderWeek(h: Hall) {
+    // أسبوع بدون جدول عريض — كل يوم Card
+    return (
+      <div key={h.id} className="card" style={{ padding: 12, borderRadius: 16 }}>
+        <div className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <strong>{h.name}</strong>
+          <span className="badge">أسبوعي</span>
+        </div>
+
+        <div className="grid" style={{ gap: 10, marginTop: 10 }}>
+          {days.map((d) => (
+            <div key={d} className="card" style={{ padding: 12, borderRadius: 16 }}>
+              <div className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                <strong>{formatISODateHuman(d)}</strong>
+                <button className="btn" onClick={() => pushParams({ view: "day", date: d })}>
+                  عرض يومي
+                </button>
+              </div>
+
+              <div className="grid" style={{ gap: 10, marginTop: 10 }}>
+                {slots.map((slot) => {
+                  const list = occMap.get(makeKey(h.id, slot.id, d)) || [];
+                  return (
+                    <div key={slot.id} className="card" style={{ padding: 12, borderRadius: 16 }}>
+                      <div className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                        <div>
+                          <strong>{slot.name}</strong>
+                          <div className="small muted">{slot.start_time} - {slot.end_time}</div>
+                        </div>
+                        <span className="badge">{list.length ? "محجوز" : "متاح"}</span>
+                      </div>
+
+                      <div style={{ marginTop: 10 }}>
+                        {renderSlotCard(list, h.id, slot.id, d)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderMonth() {
+    // شهر بسيط (نحسب الشهر من selectedDate)
+    const ref = DateTime.fromISO(selectedDate, { zone: BAHRAIN_TZ });
+    const first = ref.startOf("month");
+    const last = ref.endOf("month");
+
+    // بداية الشبكة: نرجع لحد الأحد
+    const weekday = first.weekday; // 1=Mon..7=Sun
+    const daysSinceSunday = weekday % 7;
+    const gridStart = first.minus({ days: daysSinceSunday }).startOf("day");
+
+    // نهاية الشبكة: نوصل لآخر سبت
+    const lastWeekday = last.weekday;
+    const daysToSaturday = (6 - (lastWeekday % 7) + 7) % 7; // Sat => 6 (Sun=0)
+    const gridEnd = last.plus({ days: daysToSaturday }).startOf("day");
+
+    const totalDays = Math.round(gridEnd.diff(gridStart, "days").days) + 1;
+    const cells = Array.from({ length: totalDays }, (_, i) => gridStart.plus({ days: i }).toISODate()!);
+
+    const monthTitle = ref.toFormat("LLLL yyyy");
+
+    return (
+      <div className="card" style={{ padding: 12, borderRadius: 16 }}>
+        <div className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <strong>{monthTitle}</strong>
+          <span className="badge">شهري</span>
+        </div>
+
+        <div className="grid" style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
+          {["أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"].map((w) => (
+            <div key={w} className="small muted" style={{ textAlign: "center" }}>{w}</div>
+          ))}
+
+          {cells.map((d) => {
+            const inMonth = DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month === ref.month;
+            const dot = byDateAny.get(d);
+            const hasConfirmed = !!dot?.hasConfirmed;
+            const hasHold = !!dot?.hasHold;
+            const hasCancelled = !!dot?.hasCancelled;
+
+            const bg = hasConfirmed
+              ? "rgba(220,38,38,.10)"
+              : hasHold
+                ? "rgba(245,158,11,.10)"
+                : hasCancelled
+                  ? "rgba(107,114,128,.10)"
+                  : "transparent";
+
+            const border = hasConfirmed
+              ? "rgba(220,38,38,.35)"
+              : hasHold
+                ? "rgba(245,158,11,.35)"
+                : hasCancelled
+                  ? "rgba(107,114,128,.35)"
+                  : "rgba(0,0,0,.08)";
+
+            return (
+              <button
+                key={d}
+                className="card"
+                onClick={() => pushParams({ view: "day", date: d })}
+                style={{
+                  padding: 10,
+                  borderRadius: 14,
+                  borderColor: border,
+                  background: bg,
+                  opacity: inMonth ? 1 : 0.45,
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontWeight: 700 }}>
+                  {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}
+                </div>
+                <div className="small muted" style={{ marginTop: 4 }}>
+                  {hasConfirmed ? "مؤكد" : hasHold ? "مبدئي" : hasCancelled ? "ملغي" : " "}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          <span className="badge">Confirmed = أحمر</span>
+          <span className="badge">Hold = برتقالي</span>
+          <span className="badge">Cancelled = رمادي</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid" style={{ gap: 12 }}>
       {/* Controls */}
-      <div className="card" style={{ padding: 12 }}>
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <div className="row">
-            <Link className="btn" href={`/dashboard?date=${prevWeek}`}>الأسبوع السابق</Link>
-            <Link className="btn" href={`/dashboard?date=${nextWeek}`}>الأسبوع القادم</Link>
-            <button className="btn" onClick={() => goToDate(today)}>اليوم</button>
+      <div className="card" style={{ padding: 12, borderRadius: 16 }}>
+        <div className="grid" style={{ gap: 10 }}>
+          <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button className="btn" onClick={goPrev}>السابق</button>
+              <button className="btn" onClick={goNext}>القادم</button>
+              <button className="btn" onClick={goToday}>اليوم</button>
+            </div>
+
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button
+                className={`btn ${view === "day" ? "primary" : ""}`}
+                onClick={() => pushParams({ view: "day" })}
+              >
+                يومي
+              </button>
+              <button
+                className={`btn ${view === "week" ? "primary" : ""}`}
+                onClick={() => pushParams({ view: "week" })}
+              >
+                أسبوعي
+              </button>
+              <button
+                className={`btn ${view === "month" ? "primary" : ""}`}
+                onClick={() => pushParams({ view: "month" })}
+              >
+                شهري
+              </button>
+            </div>
           </div>
 
-          <div className="row">
-            <Link className="btn" href="/settings">الإعدادات</Link>
+          <div className="grid" style={{ gap: 10 }}>
+            <div>
+              <label className="label">اختر تاريخ</label>
+              <input
+                className="input"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => pushParams({ date: e.target.value, start: e.target.value })}
+                style={{ maxWidth: "100%" }}
+              />
+            </div>
+
+            <div>
+              <label className="label">فلتر الصالة</label>
+              <select
+                className="select"
+                value={String(hallFilter)}
+                onChange={(e) => setHallFilter(e.target.value === "all" ? "all" : Number(e.target.value))}
+                style={{ maxWidth: "100%" }}
+              >
+                <option value="all">الكل</option>
+                {halls.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
 
-        <div className="grid" style={{ marginTop: 10, gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-          {/* Date picker (button style) */}
-          <div>
-            <label className="label">التاريخ</label>
-            <button type="button" className="btn" style={{ width: "100%", justifyContent: "space-between", display: "flex" }} onClick={openDatePicker}>
-              <span>{fmtDay(selectedDate)}</span>
-              <span className="muted">📅</span>
-            </button>
-            <input
-              ref={dateInputRef}
-              className="input"
-              type="date"
-              value={selectedDate}
-              onChange={(e) => goToDate(e.target.value)}
-              style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 1, height: 1 }}
-            />
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <span className="badge">Confirmed = أحمر</span>
+            <span className="badge">Hold = برتقالي</span>
+            <span className="badge">Cancelled = رمادي</span>
           </div>
-
-          {/* Hall filter */}
-          <div>
-            <label className="label">فلتر الصالة</label>
-            <select
-              className="select"
-              value={String(hallFilter)}
-              onChange={(e) => setHallFilter(e.target.value === "all" ? "all" : Number(e.target.value))}
-            >
-              <option value="all">الكل</option>
-              {props.halls.map((h) => (
-                <option key={h.id} value={h.id}>{h.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Mode tabs */}
-        <div className="row" style={{ marginTop: 10 }}>
-          <button className={`btn ${mode === "day" ? "primary" : ""}`} onClick={() => setMode("day")}>يومي</button>
-          <button className={`btn ${mode === "week" ? "primary" : ""}`} onClick={() => setMode("week")}>أسبوعي</button>
-          <button className={`btn ${mode === "month" ? "primary" : ""}`} onClick={() => setMode("month")}>شهري</button>
-
-          <span className="badge" style={{ marginInlineStart: "auto" }}>
-            Confirmed = أحمر • Hold = برتقالي • Cancelled = رمادي
-          </span>
         </div>
       </div>
 
-      {/* ===== MONTH VIEW ===== */}
-      {mode === "month" ? (
-        <div className="card" style={{ padding: 12 }}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <strong style={{ fontSize: 16 }}>
-              {DateTime.fromISO(selectedDate, { zone: BAHRAIN_TZ }).toFormat("LLLL yyyy")}
-            </strong>
-            <span className="badge">اضغط على أي يوم للدخول للتفاصيل اليومية</span>
-          </div>
-
-          <div className="grid" style={{ marginTop: 10, gap: 8 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
-              {["أحد","إثنين","ثلاثاء","أربعاء","خميس","جمعة","سبت"].map((d) => (
-                <div key={d} className="small muted" style={{ textAlign: "center" }}>{d}</div>
-              ))}
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
-              {monthInfo.cells.map((c) => {
-                const iso = c.toISODate()!;
-                const inMonth = c.month === monthInfo.monthStart.month;
-                const isToday = iso === today;
-                const style = monthCellStyle(iso);
-
-                return (
-                  <button
-                    key={iso}
-                    className="btn"
-                    onClick={() => {
-                      goToDate(iso);
-                      setMode("day");
-                    }}
-                    style={{
-                      padding: 10,
-                      borderRadius: 14,
-                      minHeight: 54,
-                      textAlign: "center",
-                      opacity: inMonth ? 1 : 0.45,
-                      borderColor: isToday ? "rgba(0,0,0,.35)" : undefined,
-                      ...style,
-                    }}
-                    type="button"
-                  >
-                    <div style={{ fontWeight: 700 }}>{c.day}</div>
-                    <div className="small muted">{dayStatusMap.get(iso) ? "●" : ""}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* ===== DAY / WEEK views per hall ===== */}
-      {mode !== "month"
-        ? visibleHalls.map((hall) => (
-            <div key={hall.id} className="card" style={{ padding: 12 }}>
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <strong style={{ fontSize: 16 }}>{hall.name}</strong>
-                <span className="badge">{mode === "day" ? "عرض يومي" : "عرض أسبوعي"}</span>
-              </div>
-
-              {mode === "day" ? (
-                <div className="grid" style={{ marginTop: 10, gap: 10 }}>
-                  {props.slots.map((slot) => {
-                    const list = occMap.get(occKey(hall.id, slot.id, selectedDate)) || [];
-                    return (
-                      <div key={slot.id} className="card" style={{ padding: 12 }}>
-                        <div className="row" style={{ justifyContent: "space-between" }}>
-                          <div>
-                            <div><strong>{slot.name}</strong></div>
-                            <div className="small muted">{slot.start_time} - {slot.end_time}</div>
-                          </div>
-                          <span className="badge">{list.length === 0 ? "متاح" : `${list.length} حجز`}</span>
-                        </div>
-
-                        <div className="grid" style={{ marginTop: 10, gap: 8 }}>
-                          {list.length === 0 ? (
-                            <div className="small muted">لا توجد حجوزات في هذه الفترة.</div>
-                          ) : (
-                            list.map((o) => {
-                              const b = o.bookings;
-                              const status = b?.status || "hold";
-                              const pay = b?.payment_status || "unpaid";
-                              const createdBy = b?.profiles?.full_name || "غير معروف";
-
-                              return (
-                                <div
-                                  key={o.id}
-                                  className={`card ${bookingClass(status)}`}
-                                  style={{ padding: 12, borderRadius: 14, ...kindTone(o.kind) }}
-                                >
-                                  <div className="row" style={{ justifyContent: "space-between" }}>
-                                    <strong style={{ fontSize: 14 }}>{b?.title || `حجز #${o.booking_id}`}</strong>
-                                    <span className="badge">{status}</span>
-                                  </div>
-
-                                  <div className="row" style={{ marginTop: 8 }}>
-                                    <span className="badge">{kindBadge(o.kind)}</span>
-                                    <span className="badge">أضيف بواسطة: {createdBy}</span>
-                                    <span className="badge">الدفع: {pay}</span>
-                                  </div>
-
-                                  <div className="small muted" style={{ marginTop: 8 }}>
-                                    {b?.client_name ? `العميل: ${b.client_name}` : ""}
-                                    {b?.client_phone ? ` • ${b.client_phone}` : ""}
-                                  </div>
-
-                                  {b?.notes ? <div className="small" style={{ marginTop: 8 }}>{b.notes}</div> : null}
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={{ overflowX: "auto", marginTop: 10 }}>
-                  <table className="table" style={{ minWidth: 900 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ width: 160 }}>الفترة</th>
-                        {props.days.map((d) => (
-                          <th key={d}>
-                            {fmtDay(d)}
-                            {d === today ? " • اليوم" : ""}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {props.slots.map((slot) => (
-                        <tr key={slot.id}>
-                          <td>
-                            <div><strong>{slot.name}</strong></div>
-                            <div className="small muted">{slot.start_time} - {slot.end_time}</div>
-                          </td>
-
-                          {props.days.map((d) => {
-                            const list = occMap.get(occKey(hall.id, slot.id, d)) || [];
-
-                            // weekly: اختصار (فقط نوع + عنوان مختصر)
-                            return (
-                              <td key={d} style={d === today ? { background: "rgba(0,0,0,0.02)" } : undefined}>
-                                {list.length === 0 ? (
-                                  <span className="small muted">متاح</span>
-                                ) : (
-                                  <div className="grid" style={{ gap: 8 }}>
-                                    {list.map((o) => {
-                                      const b = o.bookings;
-                                      const status = b?.status || "hold";
-                                      const title = (b?.title || "").split(" ")[0] || "حجز";
-                                      return (
-                                        <div
-                                          key={o.id}
-                                          className={`card ${bookingClass(status)}`}
-                                          style={{ padding: 10, borderRadius: 12, ...kindTone(o.kind) }}
-                                        >
-                                          <div className="row" style={{ justifyContent: "space-between" }}>
-                                            <strong className="small">{title}</strong>
-                                            <span className="badge">{kindBadge(o.kind)}</span>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ))
-        : null}
+      {/* Content */}
+      {view === "month" ? (
+        renderMonth()
+      ) : (
+        visibleHalls.map((h) => {
+          if (view === "day") return renderDay(h, selectedDate);
+          return renderWeek(h);
+        })
+      )}
     </div>
   );
 }

@@ -100,7 +100,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
           slots={slots ?? []}
           days={days}
           start={start}
-          anchorDate={anchorDate}
           occurrences={(occurrences ?? []) as any}
         />
       </div>
