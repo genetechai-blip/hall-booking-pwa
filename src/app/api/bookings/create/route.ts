@@ -6,17 +6,27 @@ import { DateTime } from "luxon";
 
 const BAHRAIN_TZ = "Asia/Bahrain";
 
+type SlotCode = "morning" | "afternoon" | "night";
+
 type Body = {
   title: string;
   client_name?: string | null;
   client_phone?: string | null;
   notes?: string | null;
-  status?: "hold" | "confirmed";
+  status?: "hold" | "confirmed" | "cancelled";
   payment_status?: "unpaid" | "deposit" | "paid";
-  start_date: string; // YYYY-MM-DD
-  days: number;
+
+  // الفعالية الأساسية
+  event_start_date: string; // YYYY-MM-DD
+  event_days: number; // 1..30
+
+  // أيام حجز إضافية للتجهيز/التنظيف
+  pre_days?: number; // 0..10
+  post_days?: number; // 0..10
+
+  // الصالات والفترات (تطبق على الفعالية وأيام التجهيز/التنظيف كذلك)
   hall_ids: number[];
-  slot_codes: Array<"morning" | "afternoon" | "night">;
+  slot_codes: SlotCode[];
 };
 
 export async function POST(req: Request) {
@@ -27,13 +37,25 @@ export async function POST(req: Request) {
 
   const body = (await req.json()) as Body;
 
+  // validations
   if (!body.title?.trim()) return NextResponse.json({ error: "TITLE_REQUIRED" }, { status: 400 });
-  if (!body.start_date) return NextResponse.json({ error: "START_DATE_REQUIRED" }, { status: 400 });
-  if (!body.days || body.days < 1 || body.days > 30) return NextResponse.json({ error: "DAYS_INVALID" }, { status: 400 });
-  if (!Array.isArray(body.hall_ids) || body.hall_ids.length === 0) return NextResponse.json({ error: "HALL_REQUIRED" }, { status: 400 });
-  if (!Array.isArray(body.slot_codes) || body.slot_codes.length === 0) return NextResponse.json({ error: "SLOT_REQUIRED" }, { status: 400 });
+  if (!body.event_start_date) return NextResponse.json({ error: "EVENT_START_REQUIRED" }, { status: 400 });
 
-  // Fetch slots
+  const eventDays = Number(body.event_days ?? 1);
+  const preDays = Number(body.pre_days ?? 0);
+  const postDays = Number(body.post_days ?? 0);
+
+  if (eventDays < 1 || eventDays > 30) return NextResponse.json({ error: "EVENT_DAYS_INVALID" }, { status: 400 });
+  if (preDays < 0 || preDays > 10) return NextResponse.json({ error: "PRE_DAYS_INVALID" }, { status: 400 });
+  if (postDays < 0 || postDays > 10) return NextResponse.json({ error: "POST_DAYS_INVALID" }, { status: 400 });
+
+  if (!Array.isArray(body.hall_ids) || body.hall_ids.length === 0)
+    return NextResponse.json({ error: "HALL_REQUIRED" }, { status: 400 });
+
+  if (!Array.isArray(body.slot_codes) || body.slot_codes.length === 0)
+    return NextResponse.json({ error: "SLOT_REQUIRED" }, { status: 400 });
+
+  // fetch slots
   const { data: slots, error: slotsErr } = await supabase
     .from("time_slots")
     .select("id,code,start_time,end_time")
@@ -42,7 +64,7 @@ export async function POST(req: Request) {
   if (slotsErr) return NextResponse.json({ error: slotsErr.message }, { status: 400 });
   if (!slots || slots.length === 0) return NextResponse.json({ error: "NO_SLOTS" }, { status: 400 });
 
-  // Create booking header
+  // create booking header with event info
   const { data: booking, error: bookingErr } = await supabase
     .from("bookings")
     .insert({
@@ -53,19 +75,32 @@ export async function POST(req: Request) {
       status: body.status ?? "hold",
       payment_status: body.payment_status ?? "unpaid",
       created_by: userData.user.id,
+
+      event_start_date: body.event_start_date,
+      event_days: eventDays,
+      pre_days: preDays,
+      post_days: postDays,
     })
     .select("id")
     .single();
 
   if (bookingErr) return NextResponse.json({ error: bookingErr.message }, { status: 400 });
 
-  // Build occurrences: (day x slot x hall)
+  // build occurrences with kind
   const occ: any[] = [];
-  const startDay = DateTime.fromISO(body.start_date, { zone: BAHRAIN_TZ }).startOf("day");
+  const eventStart = DateTime.fromISO(body.event_start_date, { zone: BAHRAIN_TZ }).startOf("day");
 
-  for (let d = 0; d < body.days; d++) {
-    const day = startDay.plus({ days: d });
+  const totalDays = preDays + eventDays + postDays;
+  const overallStart = eventStart.minus({ days: preDays });
+
+  for (let d = 0; d < totalDays; d++) {
+    const day = overallStart.plus({ days: d });
     const dayISO = day.toISODate()!;
+
+    // determine kind
+    let kind: "event" | "prep" | "cleanup" = "event";
+    if (d < preDays) kind = "prep";
+    else if (d >= preDays + eventDays) kind = "cleanup";
 
     for (const hall_id of body.hall_ids) {
       for (const s of slots) {
@@ -78,6 +113,7 @@ export async function POST(req: Request) {
           slot_id: s.id,
           start_ts: startLocal.toUTC().toISO({ suppressMilliseconds: true }),
           end_ts: endLocal.toUTC().toISO({ suppressMilliseconds: true }),
+          kind,
         });
       }
     }

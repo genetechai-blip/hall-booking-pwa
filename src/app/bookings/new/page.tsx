@@ -1,123 +1,154 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabaseBrowser } from "@/lib/supabase/client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Hall, Slot } from "@/lib/types";
-import { todayBahrainISODate } from "@/lib/time";
+import { DateTime } from "luxon";
+
+const BAHRAIN_TZ = "Asia/Bahrain";
+
+type SlotCode = "morning" | "afternoon" | "night";
+
+function todayISO() {
+  return DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
+}
 
 export default function NewBookingPage() {
-  const supabase = useMemo(() => supabaseBrowser(), []);
+  const router = useRouter();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [halls, setHalls] = useState<Hall[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
-  const [loading, setLoading] = useState(true);
 
+  // booking fields
   const [title, setTitle] = useState("");
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [notes, setNotes] = useState("");
+
   const [status, setStatus] = useState<"hold" | "confirmed">("hold");
   const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "deposit" | "paid">("unpaid");
 
-  const [startDate, setStartDate] = useState(todayBahrainISODate());
-  const [days, setDays] = useState(1);
+  // event + buffers
+  const [eventStartDate, setEventStartDate] = useState<string>(todayISO());
+  const [eventDays, setEventDays] = useState<number>(1);
+  const [preDays, setPreDays] = useState<number>(0);
+  const [postDays, setPostDays] = useState<number>(0);
 
-  const [hallIds, setHallIds] = useState<number[]>([]);
-  const [slotCodes, setSlotCodes] = useState<Array<"morning"|"afternoon"|"night">>(["night"]);
-
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  // selection
+  const [selectedHallIds, setSelectedHallIds] = useState<number[]>([]);
+  const [selectedSlotCodes, setSelectedSlotCodes] = useState<SlotCode[]>(["night"]);
 
   useEffect(() => {
     (async () => {
-      setLoading(true);
-      const { data: hallsData } = await supabase.from("halls").select("id,name").order("id");
-      const { data: slotsData } = await supabase.from("time_slots").select("id,code,name,start_time,end_time").order("id");
-      setHalls((hallsData || []) as Hall[]);
-      setSlots((slotsData || []) as Slot[]);
-      setLoading(false);
+      try {
+        const [hRes, sRes] = await Promise.all([fetch("/api/meta/halls"), fetch("/api/meta/slots")]);
+        if (!hRes.ok || !sRes.ok) throw new Error("META_FETCH_FAILED");
+        const hallsData = await hRes.json();
+        const slotsData = await sRes.json();
+        setHalls(hallsData);
+        setSlots(slotsData);
+      } catch (e: any) {
+        setError(e?.message || "حدث خطأ في تحميل البيانات.");
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, [supabase]);
+  }, []);
+
+  const slotOptions = useMemo(() => {
+    const order: Record<string, number> = { morning: 1, afternoon: 2, night: 3 };
+    return [...slots].sort((a, b) => (order[a.code] ?? 99) - (order[b.code] ?? 99));
+  }, [slots]);
+
+  const totalDays = preDays + eventDays + postDays;
+
+  const summary = useMemo(() => {
+    const start = DateTime.fromISO(eventStartDate, { zone: BAHRAIN_TZ }).minus({ days: preDays }).toISODate()!;
+    const end = DateTime.fromISO(eventStartDate, { zone: BAHRAIN_TZ })
+      .plus({ days: eventDays + postDays - 1 })
+      .toISODate()!;
+
+    const parts: string[] = [];
+    parts.push(`الفعالية تبدأ: ${eventStartDate} لمدة ${eventDays} يوم`);
+    if (preDays) parts.push(`تجهيز قبلها: ${preDays} يوم`);
+    if (postDays) parts.push(`تنظيف بعدها: ${postDays} يوم`);
+    parts.push(`نطاق الحجز: ${start} → ${end} (مجموع ${totalDays} يوم)`);
+    return parts.join(" • ");
+  }, [eventStartDate, eventDays, preDays, postDays, totalDays]);
 
   function toggleHall(id: number) {
-    setHallIds((prev) => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    setSelectedHallIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  function toggleSlot(code: "morning"|"afternoon"|"night") {
-    setSlotCodes((prev) => prev.includes(code) ? prev.filter(x => x !== code) : [...prev, code]);
+  function toggleSlot(code: SlotCode) {
+    setSelectedSlotCodes((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]));
   }
 
   async function submit() {
-    setMsg(null);
-    if (!title.trim()) return setMsg("اكتب عنوان الحجز.");
-    if (hallIds.length === 0) return setMsg("اختَر صالة واحدة على الأقل.");
-    if (slotCodes.length === 0) return setMsg("اختَر فترة واحدة على الأقل.");
-    if (days < 1 || days > 30) return setMsg("عدد الأيام غير صحيح.");
+    setError(null);
 
-    setBusy(true);
-    const res = await fetch("/api/bookings/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: title.trim(),
-        client_name: clientName.trim() || null,
-        client_phone: clientPhone.trim() || null,
-        notes: notes.trim() || null,
-        status,
-        payment_status: paymentStatus,
-        start_date: startDate,
-        days,
-        hall_ids: hallIds,
-        slot_codes: slotCodes
-      })
-    });
+    if (!title.trim()) return setError("اكتب عنوان الحجز (مثال: زواج محمد حسن).");
+    if (selectedHallIds.length === 0) return setError("اختر صالة واحدة على الأقل.");
+    if (selectedSlotCodes.length === 0) return setError("اختر فترة واحدة على الأقل.");
+    if (eventDays < 1 || eventDays > 30) return setError("عدد أيام الفعالية لازم يكون بين 1 و 30.");
+    if (preDays < 0 || preDays > 10) return setError("أيام التجهيز لازم تكون بين 0 و 10.");
+    if (postDays < 0 || postDays > 10) return setError("أيام التنظيف لازم تكون بين 0 و 10.");
 
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/bookings/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          client_name: clientName.trim() || null,
+          client_phone: clientPhone.trim() || null,
+          notes: notes.trim() || null,
+          status,
+          payment_status: paymentStatus,
 
-    if (!res.ok) {
-      setMsg(data?.error || "فشل الحفظ.");
-      return;
+          event_start_date: eventStartDate,
+          event_days: eventDays,
+          pre_days: preDays,
+          post_days: postDays,
+
+          hall_ids: selectedHallIds,
+          slot_codes: selectedSlotCodes,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "فشل حفظ الحجز.");
+
+      // رجع للداشبورد على أسبوع تاريخ الفعالية
+      router.push(`/dashboard?date=${eventStartDate}`);
+    } catch (e: any) {
+      setError(e?.message || "صار خطأ.");
+    } finally {
+      setSaving(false);
     }
-    window.location.href = "/dashboard";
-  }
-
-  if (loading) {
-    return (
-      <main className="container">
-        <div className="card">جاري التحميل...</div>
-      </main>
-    );
   }
 
   return (
-    <main className="container">
+    <div className="container">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h2 style={{ margin: 0 }}>إضافة حجز</h2>
-        <a className="btn" href="/dashboard">رجوع</a>
+        <Link className="btn" href="/dashboard">رجوع</Link>
       </div>
 
-      <div className="grid cols2" style={{ marginTop: 12 }}>
-        <div className="card">
-          <div className="grid">
+      <div className="card" style={{ marginTop: 12 }}>
+        {loading ? (
+          <div className="muted">جاري التحميل…</div>
+        ) : (
+          <div className="grid cols2">
             <div>
               <label className="label">عنوان الحجز</label>
-              <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثال: مجلس عزاء - عائلة ..." />
-            </div>
-
-            <div className="grid cols2">
-              <div>
-                <label className="label">اسم العميل</label>
-                <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} />
-              </div>
-              <div>
-                <label className="label">رقم العميل</label>
-                <input className="input" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} />
-              </div>
-            </div>
-
-            <div>
-              <label className="label">ملاحظات</label>
-              <textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثال: زواج محمد حسن" />
             </div>
 
             <div className="grid cols2">
@@ -133,72 +164,104 @@ export default function NewBookingPage() {
                 <select className="select" value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value as any)}>
                   <option value="unpaid">غير مدفوع</option>
                   <option value="deposit">عربون</option>
-                  <option value="paid">مدفوع بالكامل</option>
+                  <option value="paid">مدفوع</option>
                 </select>
               </div>
             </div>
 
-            <hr />
+            <div>
+              <label className="label">اسم صاحب الحجز (اختياري)</label>
+              <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="مثال: محمد حسن" />
+            </div>
 
-            <div className="grid cols2">
+            <div>
+              <label className="label">رقم الهاتف (اختياري)</label>
+              <input className="input" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="مثال: 3xxxxxxx" />
+            </div>
+
+            <div className="grid cols3">
               <div>
-                <label className="label">تاريخ البداية</label>
-                <input className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <label className="label">تاريخ الفعالية</label>
+                <input className="input" type="date" value={eventStartDate} onChange={(e) => setEventStartDate(e.target.value)} />
               </div>
               <div>
-                <label className="label">عدد الأيام</label>
-                <input className="input" type="number" min={1} max={30} value={days} onChange={(e) => setDays(Number(e.target.value))} />
+                <label className="label">أيام الفعالية</label>
+                <input className="input" type="number" min={1} max={30} value={eventDays} onChange={(e) => setEventDays(Number(e.target.value || 1))} />
+              </div>
+              <div>
+                <label className="label">مجموع الأيام</label>
+                <input className="input" value={String(totalDays)} disabled />
+              </div>
+            </div>
+
+            <div className="grid cols3">
+              <div>
+                <label className="label">تجهيز قبل الفعالية (أيام)</label>
+                <input className="input" type="number" min={0} max={10} value={preDays} onChange={(e) => setPreDays(Number(e.target.value || 0))} />
+              </div>
+              <div>
+                <label className="label">تنظيف بعد الفعالية (أيام)</label>
+                <input className="input" type="number" min={0} max={10} value={postDays} onChange={(e) => setPostDays(Number(e.target.value || 0))} />
+              </div>
+              <div>
+                <label className="label">ملخص</label>
+                <div className="badge" style={{ width: "100%", justifyContent: "center", textAlign: "center" }}>
+                  {summary}
+                </div>
               </div>
             </div>
 
             <div>
-              <label className="label">الفترات</label>
-              <div className="row">
-                {slots.map((s) => (
-                  <label key={s.code} className="badge" style={{ cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={slotCodes.includes(s.code)}
-                      onChange={() => toggleSlot(s.code)}
-                      style={{ marginInlineEnd: 8 }}
-                    />
-                    {s.name} <span className="muted small">({s.start_time}-{s.end_time})</span>
-                  </label>
+              <label className="label">ملاحظات (اختياري)</label>
+              <textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
+
+            <div>
+              <label className="label">اختر الصالات</label>
+              <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                {halls.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    className={`btn ${selectedHallIds.includes(h.id) ? "primary" : ""}`}
+                    onClick={() => toggleHall(h.id)}
+                  >
+                    {h.name}
+                  </button>
                 ))}
               </div>
             </div>
 
-            {msg && (
-              <div className="card" style={{ borderColor: "#ffd6d6", background: "#fff5f5" }}>
-                <div className="small" style={{ color: "#b00020" }}>{msg}</div>
+            <div>
+              <label className="label">اختر الفترات</label>
+              <div className="row">
+                {slotOptions.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={`btn ${selectedSlotCodes.includes(s.code as any) ? "primary" : ""}`}
+                    onClick={() => toggleSlot(s.code as any)}
+                  >
+                    {s.name}
+                  </button>
+                ))}
               </div>
-            )}
+              <div className="small muted" style={{ marginTop: 6 }}>
+                (تطبق على الفعالية وأيام التجهيز/التنظيف كذلك)
+              </div>
+            </div>
 
-            <button className="btn primary" onClick={submit} disabled={busy}>
-              {busy ? "جاري الحفظ..." : "حفظ"}
-            </button>
-          </div>
-        </div>
+            {error ? <div className="badge" style={{ borderColor: "rgba(176,0,32,.35)", background: "rgba(176,0,32,.08)" }}>{error}</div> : null}
 
-        <div className="card">
-          <label className="label">الصالات</label>
-          <div className="grid" style={{ gap: 8 }}>
-            {halls.map((h) => (
-              <label key={h.id} className="card" style={{ padding: 10, borderRadius: 12, cursor: "pointer" }}>
-                <div className="row" style={{ justifyContent: "space-between" }}>
-                  <strong>{h.name}</strong>
-                  <input type="checkbox" checked={hallIds.includes(h.id)} onChange={() => toggleHall(h.id)} />
-                </div>
-              </label>
-            ))}
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <button className="btn primary" disabled={saving} onClick={submit}>
+                {saving ? "جاري الحفظ…" : "حفظ الحجز"}
+              </button>
+              <span className="small muted">* التعارض يمنع تلقائيًا من قاعدة البيانات</span>
+            </div>
           </div>
-
-          <hr />
-          <div className="small muted">
-            إذا طلع تعارض، النظام بيرفض الحجز لأن نفس الصالة محجوزة بنفس الوقت.
-          </div>
-        </div>
+        )}
       </div>
-    </main>
+    </div>
   );
 }
