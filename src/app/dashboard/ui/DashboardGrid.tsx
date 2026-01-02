@@ -332,17 +332,20 @@ export default function DashboardGrid(props: Props) {
             </Tabs>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold mb-1">اختر تاريخ</div>
-                {/* مهم: نخليها LTR ومُتوسّطة عشان ما تميل وتخرب */}
-                <Input
-                  dir="ltr"
-                  type="date"
-                  value={anchor}
-                  onChange={(e) => setAnchor(e.target.value)}
-                  className="rounded-xl text-center w-full"
-                />
-              </div>
+              
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold mb-1 text-right">اختر تاريخ</div>
+                  {/* Wrapper LTR + توسيط */}
+                  <div dir="ltr" className="w-full">
+                    <Input
+                      type="date"
+                      value={anchor}
+                      onChange={(e) => setAnchor(e.target.value)}
+                      className="rounded-xl w-full max-w-[420px] mx-auto text-center"
+                    />
+                  </div>
+                </div>
+
 
               <div className="min-w-0">
                 <div className="text-sm font-semibold mb-1">فلتر الصالة</div>
@@ -410,7 +413,9 @@ export default function DashboardGrid(props: Props) {
 
             <CardContent>
               <div className="grid grid-cols-7 gap-2">
-                {viewDays.map((d) => {
+
+
+              {viewDays.map((d) => {
                   const isThisMonth =
                     DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month ===
                     DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
@@ -419,13 +424,12 @@ export default function DashboardGrid(props: Props) {
                   const statuses = sum?.statuses || [];
                   const kinds = sum?.kinds || [];
                   const hasAny = statuses.length > 0;
-                  const tone = dayToneByStatus(statuses);
 
+                  // أكثر نوع تكراراً
                   let label = "";
                   if (kinds.length > 0) {
                     const counts = new Map<BookingType, number>();
-                    for (const k of kinds)
-                      counts.set(k, (counts.get(k) || 0) + 1);
+                    for (const k of kinds) counts.set(k, (counts.get(k) || 0) + 1);
                     let best: BookingType = kinds[0];
                     let bestN = 0;
                     counts.forEach((n, k) => {
@@ -437,6 +441,9 @@ export default function DashboardGrid(props: Props) {
                     label = kindLabel(best);
                   }
 
+                  // نستخدم ألوان هادية بدون ring (عشان ما تبين الخانة أكبر)
+                  const tone = dayToneByStatus(statuses);
+
                   return (
                     <button
                       key={d}
@@ -445,33 +452,40 @@ export default function DashboardGrid(props: Props) {
                         setView("day");
                       }}
                       className={[
-                        "aspect-square rounded-2xl border p-2",
-                        "flex flex-col items-center justify-between",
+                        // ✅ حجم ثابت ومتناسق على الموبايل + يكبر شوي على الشاشات الكبيرة
+                        "h-[56px] sm:h-[76px] w-full",
+                        "rounded-2xl border",
+                        "flex flex-col items-center justify-center gap-1",
                         "transition active:scale-[0.99]",
-                        hasAny ? `${tone.bg} ${tone.border} ring-1 ${tone.ring}` : "",
+                        "px-1",
+                        // ألوان هادية (بدون ring)
+                        hasAny ? `${tone.bg} ${tone.border}` : "bg-background",
                         isThisMonth ? "opacity-100" : "opacity-40",
                       ].join(" ")}
                     >
-                      <div className="text-base font-extrabold leading-none text-center">
+                      {/* الرقم في النص بالضبط */}
+                      <div className="text-[16px] sm:text-[18px] font-extrabold leading-none text-center">
                         {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}
                       </div>
 
+                      {/* ✅ النص كامل (وفاة/مولد/زواج/خاصة) بدون تكسير */}
                       {hasAny ? (
-                        <Badge
-                          variant="secondary"
-                          className="rounded-full px-2 py-0.5 text-xs font-bold max-w-full truncate"
-                        >
-                          {label}
-                        </Badge>
+                        <div className="w-full px-1">
+                          <div className="mx-auto max-w-full rounded-full bg-white/70 border px-2 py-[2px]
+                                          text-[11px] sm:text-[12px] font-bold
+                                          whitespace-nowrap overflow-hidden text-ellipsis text-center">
+                            {label}
+                          </div>
+                        </div>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">
-                          &nbsp;
-                        </span>
+                        <div className="h-[18px]" />
                       )}
                     </button>
                   );
                 })}
+
               </div>
+            
             </CardContent>
           </Card>
         )}
