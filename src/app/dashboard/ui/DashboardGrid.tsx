@@ -4,17 +4,43 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DateTime } from "luxon";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import type { Hall, Slot, DashboardOccurrence, BookingType, BookingStatus } from "@/lib/types";
+import type {
+  Hall,
+  Slot,
+  DashboardOccurrence,
+  BookingType,
+  BookingStatus,
+} from "@/lib/types";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const BAHRAIN_TZ = "Asia/Bahrain";
-
 type ViewMode = "day" | "week" | "month";
 
 type Props = {
   halls: Hall[];
   slots: Slot[];
-  days: string[]; // موجود (حتى لو ما نستخدمه بالكامل)
-  start: string; // ISO date (YYYY-MM-DD)
+  days: string[];
+  start: string; // YYYY-MM-DD
   anchorDate?: string;
   occurrences: DashboardOccurrence[];
 };
@@ -54,7 +80,7 @@ function occDayISO(o: DashboardOccurrence) {
 }
 
 function fmtDayHuman(iso: string) {
-  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).setLocale("ar").toFormat("ccc dd LLL");
+  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).toFormat("ccc dd LLL");
 }
 
 function startOfWeekSunday(iso: string) {
@@ -65,11 +91,13 @@ function startOfWeekSunday(iso: string) {
 }
 
 function addDays(iso: string, n: number) {
-  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).plus({ days: n }).toISODate()!;
+  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ })
+    .plus({ days: n })
+    .toISODate()!;
 }
 
-function monthGridStart(iso: string) {
-  const d = DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).startOf("month");
+function monthGridStart(anchorISO: string) {
+  const d = DateTime.fromISO(anchorISO, { zone: BAHRAIN_TZ }).startOf("month");
   return startOfWeekSunday(d.toISODate()!);
 }
 
@@ -78,129 +106,44 @@ function monthGridDays(anchorISO: string) {
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
 }
 
-function rangeForView(view: ViewMode, anchorISO: string) {
-  if (view === "day") {
-    return { startISO: anchorISO, endISO: addDays(anchorISO, 1) };
-  }
-  if (view === "week") {
-    const startISO = startOfWeekSunday(anchorISO);
-    return { startISO, endISO: addDays(startISO, 7) };
-  }
-  const startISO = monthGridStart(anchorISO);
-  return { startISO, endISO: addDays(startISO, 42) };
-}
-
-function dayToneByStatus(statuses: BookingStatus[]) {
-  if (statuses.includes("confirmed")) return { bg: "rgba(176,0,32,0.10)", border: "rgba(176,0,32,0.25)" };
-  if (statuses.includes("hold")) return { bg: "rgba(255,152,0,0.12)", border: "rgba(255,152,0,0.25)" };
-  if (statuses.includes("cancelled")) return { bg: "rgba(120,120,120,0.10)", border: "rgba(120,120,120,0.20)" };
-  return { bg: "#fff", border: "#e9e9e9" };
-}
-
-function Icon({ name }: { name: "plus" | "gear" | "logout" | "edit" }) {
-  const common = {
-    width: 18,
-    height: 18,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 2,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-  };
-  if (name === "plus")
-    return (
-      <svg {...common}>
-        <path d="M12 5v14" />
-        <path d="M5 12h14" />
-      </svg>
-    );
-  if (name === "gear")
-    return (
-      <svg {...common}>
-        <path d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.6a7.9 7.9 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.9 7.9 0 0 0-1.7 1L6.5 9.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 .1 1 7.8 7.8 0 0 0-.1 1l-2 1.2 2 3.4 2.3-.6a7.9 7.9 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.9 7.9 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2a7.8 7.8 0 0 0-.1-1z" />
-        <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-      </svg>
-    );
-  if (name === "logout")
-    return (
-      <svg {...common}>
-        <path d="M10 17l-1 0a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1" />
-        <path d="M15 12H9" />
-        <path d="M15 12l-3-3" />
-        <path d="M15 12l-3 3" />
-        <path d="M18 19V5" />
-      </svg>
-    );
-  return (
-    <svg {...common}>
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-    </svg>
-  );
-}
-
 function occTitle(o: DashboardOccurrence) {
   return (o.booking_title ?? o.title ?? "").trim() || `حجز #${o.booking_id}`;
 }
-
 function occStatus(o: DashboardOccurrence): BookingStatus {
   return (o.booking_status ?? o.status ?? "hold") as BookingStatus;
 }
-
 function occType(o: DashboardOccurrence): BookingType {
   return (o.booking_type ?? o.kind ?? "special") as BookingType;
 }
-
 function occAmount(o: DashboardOccurrence): number | null {
   const v = o.payment_amount ?? o.amount;
   return typeof v === "number" ? v : null;
 }
 
-function flatten(row: any): DashboardOccurrence {
-  const b = row?.bookings ?? null;
-  const paymentAmount = typeof b?.payment_amount === "number" ? b.payment_amount : null;
-  const amount = typeof b?.amount === "number" ? b.amount : null;
-
-  return {
-    id: row.id,
-    hall_id: Number(row.hall_id),
-    slot_id: Number(row.slot_id),
-    start_ts: row.start_ts,
-    end_ts: row.end_ts,
-    booking_id: Number(row.booking_id),
-
-    booking_title: b?.title ?? null,
-    booking_status: b?.status ?? null,
-    booking_type: b?.booking_type ?? null,
-
-    // fallback
-    title: b?.title ?? null,
-    status: b?.status ?? null,
-    kind: b?.booking_type ?? null,
-
-    client_name: b?.client_name ?? null,
-    client_phone: b?.client_phone ?? null,
-    notes: b?.notes ?? null,
-
-    created_by: b?.created_by ?? null,
-
-    payment_amount: paymentAmount,
-    amount,
-    currency: b?.currency ?? null,
-  };
+function dayToneByStatus(statuses: BookingStatus[]) {
+  // ألوان هادية (iOS-ish)
+  if (statuses.includes("confirmed"))
+    return { bg: "bg-red-50", ring: "ring-red-200", border: "border-red-200" };
+  if (statuses.includes("hold"))
+    return {
+      bg: "bg-amber-50",
+      ring: "ring-amber-200",
+      border: "border-amber-200",
+    };
+  if (statuses.includes("cancelled"))
+    return {
+      bg: "bg-zinc-50",
+      ring: "ring-zinc-200",
+      border: "border-zinc-200",
+    };
+  return { bg: "bg-background", ring: "ring-border", border: "border-border" };
 }
 
 export default function DashboardGrid(props: Props) {
   const supabase = useMemo(() => supabaseBrowser(), []);
-
   const [view, setView] = useState<ViewMode>("month");
   const [anchor, setAnchor] = useState<string>(props.anchorDate || isoToday());
   const [hallFilter, setHallFilter] = useState<number | "all">("all");
-
-  const [occurrences, setOccurrences] = useState<DashboardOccurrence[]>(props.occurrences || []);
-  const [occLoading, setOccLoading] = useState(false);
-  const [occError, setOccError] = useState<string>("");
 
   const [myName, setMyName] = useState<string>("");
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
@@ -212,65 +155,30 @@ export default function DashboardGrid(props: Props) {
       const uid = data.user?.id;
       if (!uid) return;
 
-      const { data: p } = await supabase.from("profiles").select("full_name").eq("id", uid).maybeSingle();
+      const { data: p } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", uid)
+        .maybeSingle();
 
       const n = (p?.full_name || "").trim();
       setMyName(n || "بدون اسم");
     })();
   }, [supabase]);
 
-  // ✅ تحميل occurrences حسب العرض/التاريخ
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      setOccLoading(true);
-      setOccError("");
-
-      const { startISO, endISO } = rangeForView(view, anchor);
-      const startTS = DateTime.fromISO(startISO, { zone: BAHRAIN_TZ }).startOf("day").toISO()!;
-      const endTS = DateTime.fromISO(endISO, { zone: BAHRAIN_TZ }).startOf("day").toISO()!;
-
-      const { data, error } = await supabase
-        .from("booking_occurrences")
-        .select(
-          `id,hall_id,slot_id,start_ts,end_ts,booking_id,bookings:bookings (title,status,booking_type,client_name,client_phone,notes,created_by,payment_amount,amount,currency)`
-        )
-        .gte("start_ts", startTS)
-        .lt("start_ts", endTS)
-        .order("start_ts", { ascending: true });
-
-      if (cancelled) return;
-
-      if (error) {
-        setOccurrences([]);
-        setOccError(error.message);
-      } else {
-        setOccurrences((data || []).map(flatten));
-      }
-
-      setOccLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase, view, anchor]);
-
   // أسماء من أضافوا الحجوزات
   useEffect(() => {
     (async () => {
       const ids = new Set<string>();
-      for (const o of occurrences) {
-        if (o.created_by) ids.add(o.created_by);
-      }
-      const list = Array.from(ids);
-      if (list.length === 0) {
-        setCreatorNames({});
-        return;
-      }
+      for (const o of props.occurrences) if (o.created_by) ids.add(o.created_by);
 
-      const { data } = await supabase.from("profiles").select("id,full_name").in("id", list);
+      const list = Array.from(ids);
+      if (list.length === 0) return;
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("id,full_name")
+        .in("id", list);
 
       const map: Record<string, string> = {};
       (data || []).forEach((x: any) => {
@@ -278,13 +186,13 @@ export default function DashboardGrid(props: Props) {
       });
       setCreatorNames(map);
     })();
-  }, [supabase, occurrences]);
+  }, [supabase, props.occurrences]);
 
   // فلترة حسب الصالة
   const occFiltered = useMemo(() => {
-    if (hallFilter === "all") return occurrences;
-    return occurrences.filter((o) => o.hall_id === hallFilter);
-  }, [occurrences, hallFilter]);
+    if (hallFilter === "all") return props.occurrences;
+    return props.occurrences.filter((o) => o.hall_id === hallFilter);
+  }, [props.occurrences, hallFilter]);
 
   // Map: day__hall__slot -> occurrences
   const occMap = useMemo(() => {
@@ -299,34 +207,12 @@ export default function DashboardGrid(props: Props) {
     return map;
   }, [occFiltered]);
 
-  function navPrev() {
-    if (view === "day") setAnchor(addDays(anchor, -1));
-    else if (view === "week") setAnchor(addDays(anchor, -7));
-    else setAnchor(DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).minus({ months: 1 }).toISODate()!);
-  }
-  function navNext() {
-    if (view === "day") setAnchor(addDays(anchor, 1));
-    else if (view === "week") setAnchor(addDays(anchor, 7));
-    else setAnchor(DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).plus({ months: 1 }).toISODate()!);
-  }
-  function navToday() {
-    setAnchor(isoToday());
-  }
-
-  function daysForCurrentView(): string[] {
-    if (view === "day") return [anchor];
-    if (view === "week") {
-      const start = startOfWeekSunday(anchor);
-      return Array.from({ length: 7 }, (_, i) => addDays(start, i));
-    }
-    return monthGridDays(anchor);
-  }
-
-  const viewDays = useMemo(() => daysForCurrentView(), [view, anchor]);
-
   // ملخص الشهري: day -> { kinds[], statuses[] }
   const monthSummary = useMemo(() => {
-    const summary = new Map<string, { kinds: BookingType[]; statuses: BookingStatus[] }>();
+    const summary = new Map<
+      string,
+      { kinds: BookingType[]; statuses: BookingStatus[] }
+    >();
     for (const o of occFiltered) {
       const d = occDayISO(o);
       const kind = occType(o);
@@ -340,346 +226,424 @@ export default function DashboardGrid(props: Props) {
     return summary;
   }, [occFiltered]);
 
-  // styles
-  const cardStyle: React.CSSProperties = { borderRadius: 18, padding: 14 };
+  function navPrev() {
+    if (view === "day") setAnchor(addDays(anchor, -1));
+    else if (view === "week") setAnchor(addDays(anchor, -7));
+    else
+      setAnchor(
+        DateTime.fromISO(anchor, { zone: BAHRAIN_TZ })
+          .minus({ months: 1 })
+          .toISODate()!
+      );
+  }
+  function navNext() {
+    if (view === "day") setAnchor(addDays(anchor, 1));
+    else if (view === "week") setAnchor(addDays(anchor, 7));
+    else
+      setAnchor(
+        DateTime.fromISO(anchor, { zone: BAHRAIN_TZ })
+          .plus({ months: 1 })
+          .toISODate()!
+      );
+  }
+  function navToday() {
+    setAnchor(isoToday());
+  }
 
-  const pillGroup: React.CSSProperties = {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr",
-    gap: 10,
-    width: "100%",
-  };
+  const viewDays = useMemo(() => {
+    if (view === "day") return [anchor];
+    if (view === "week") {
+      const start = startOfWeekSunday(anchor);
+      return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+    }
+    return monthGridDays(anchor);
+  }, [view, anchor]);
 
-  const pillBtn = (active: boolean): React.CSSProperties => ({
-    border: "1px solid #e2e2e2",
-    borderRadius: 999,
-    padding: "10px 12px",
-    background: active ? "#111" : "#fff",
-    color: active ? "#fff" : "#0b66c3",
-    fontWeight: 800,
-    cursor: "pointer",
-  });
-
-  const actionBtn: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid #e6e6e6",
-    background: "#fff",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-    textDecoration: "none",
-    fontWeight: 800,
-    color: "#0b66c3",
-  };
-
-  const actionBtnPrimary: React.CSSProperties = {
-    ...actionBtn,
-    background: "#111",
-    color: "#fff",
-    borderColor: "#111",
-  };
+  const monthTitle = useMemo(() => {
+    return DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).toFormat("LLLL yyyy");
+  }, [anchor]);
 
   return (
-    <div className="grid" style={{ gap: 12 }}>
-      {/* Header */}
-      <div className="card" style={cardStyle}>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 26, fontWeight: 900 }}>جدول الحجوزات</div>
-            <div className="muted" style={{ marginTop: 4 }}>
-              مستخدم: <strong>{myName}</strong>
+    <div className="mx-auto w-full max-w-6xl px-3 pb-10 pt-4">
+      {/* Header (مرة وحدة فقط) */}
+      <Card className="rounded-2xl shadow-sm">
+        <CardHeader className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <CardTitle className="text-2xl font-extrabold">
+                جدول الحجوزات
+              </CardTitle>
+              <div className="text-sm text-muted-foreground mt-1">
+                مستخدم: <span className="font-bold">{myName}</span>
+              </div>
+            </div>
+
+            {/* Desktop actions */}
+            <div className="hidden sm:flex items-center gap-2">
+              <Button asChild className="rounded-xl">
+                <Link href="/bookings/new">إضافة حجز</Link>
+              </Button>
+              <Button asChild variant="secondary" className="rounded-xl">
+                <Link href="/settings">الإعدادات</Link>
+              </Button>
+              <Button asChild variant="outline" className="rounded-xl">
+                <a href="/api/auth/signout">خروج</a>
+              </Button>
+            </div>
+
+            {/* Mobile actions */}
+            <div className="sm:hidden">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="rounded-xl">
+                    ⋯
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="rounded-xl">
+                  <DropdownMenuItem asChild>
+                    <Link href="/bookings/new">إضافة حجز</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings">الإعدادات</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <a href="/api/auth/signout">خروج</a>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
-          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-            <Link href="/bookings/new" style={actionBtnPrimary}>
-              <Icon name="plus" />
-              <span>إضافة حجز</span>
-            </Link>
+          <Separator />
 
-            <Link href="/settings" style={actionBtn}>
-              <Icon name="gear" />
-              <span>الإعدادات</span>
-            </Link>
-
-            <a href="/api/auth/signout" style={actionBtn}>
-              <Icon name="logout" />
-              <span>خروج</span>
-            </a>
-          </div>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="card" style={cardStyle}>
-        <div style={pillGroup}>
-          <button style={pillBtn(view === "month")} onClick={() => setView("month")}>
-            شهري
-          </button>
-          <button style={pillBtn(view === "week")} onClick={() => setView("week")}>
-            أسبوعي
-          </button>
-          <button style={pillBtn(view === "day")} onClick={() => setView("day")}>
-            يومي
-          </button>
-        </div>
-
-        <div className="grid" style={{ marginTop: 12, gap: 10 }}>
-          <div>
-            <label className="label">اختر تاريخ</label>
-            <input
-              className="input"
-              type="date"
-              value={anchor}
-              onChange={(e) => setAnchor(e.target.value)}
-              style={{
-                fontSize: 16,
-                width: "100%",
-                maxWidth: "100%",
-                boxSizing: "border-box",
-                textAlign: "right",
-                direction: "rtl",
-              }}
-            />
-          </div>
-
-          <div>
-            <label className="label">فلتر الصالة</label>
-            <select
-              className="select"
-              value={hallFilter}
-              onChange={(e) => setHallFilter(e.target.value === "all" ? "all" : Number(e.target.value))}
-              style={{ fontSize: 16, width: "100%", boxSizing: "border-box" }}
+          {/* Controls */}
+          <div className="grid gap-3">
+            <Tabs
+              value={view}
+              onValueChange={(v) => setView(v as ViewMode)}
+              className="w-full"
             >
-              <option value="all">الكل</option>
-              {props.halls.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              <TabsList className="grid w-full grid-cols-3 rounded-2xl">
+                <TabsTrigger value="month">شهري</TabsTrigger>
+                <TabsTrigger value="week">أسبوعي</TabsTrigger>
+                <TabsTrigger value="day">يومي</TabsTrigger>
+              </TabsList>
+            </Tabs>
 
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <button className="btn" onClick={navPrev}>
-              السابق
-            </button>
-            <button className="btn" onClick={navToday}>
-              اليوم
-            </button>
-            <button className="btn" onClick={navNext}>
-              القادم
-            </button>
-          </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold mb-1">اختر تاريخ</div>
+                {/* مهم: نخليها LTR ومُتوسّطة عشان ما تميل وتخرب */}
+                <Input
+                  dir="ltr"
+                  type="date"
+                  value={anchor}
+                  onChange={(e) => setAnchor(e.target.value)}
+                  className="rounded-xl text-center w-full"
+                />
+              </div>
 
-          {(occLoading || occError) && (
-            <div className="small" style={{ marginTop: 6 }}>
-              {occLoading ? "... جاري تحميل الحجوزات" : null}
-              {occError ? <span style={{ color: "#b00020" }}>{occError}</span> : null}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Month View */}
-      {view === "month" && (
-        <div className="card" style={cardStyle}>
-          <div className="row" style={{ justifyContent: "space-between", gap: 10 }}>
-            <strong style={{ fontSize: 16 }}>
-              {DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).setLocale("ar").toFormat("LLLL yyyy")}
-            </strong>
-            <span className="muted small">اضغط على اليوم لعرض التفاصيل</span>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-              gap: 8,
-              marginTop: 12,
-              width: "100%",
-              maxWidth: "100%",
-              boxSizing: "border-box",
-            }}
-          >
-            {viewDays.map((d) => {
-              const isThisMonth =
-                DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month ===
-                DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
-
-              const sum = monthSummary.get(d);
-              const statuses = sum?.statuses || [];
-              const kinds = sum?.kinds || [];
-              const hasAny = statuses.length > 0;
-
-              const tone = dayToneByStatus(statuses);
-
-              // أكثر نوع تكراراً
-              let label = "";
-              if (kinds.length > 0) {
-                const counts = new Map<BookingType, number>();
-                for (const k of kinds) counts.set(k, (counts.get(k) || 0) + 1);
-                let best: BookingType = kinds[0];
-                let bestN = 0;
-                counts.forEach((n, k) => {
-                  if (n > bestN) {
-                    best = k;
-                    bestN = n;
+              <div className="min-w-0">
+                <div className="text-sm font-semibold mb-1">فلتر الصالة</div>
+                <Select
+                  value={hallFilter === "all" ? "all" : String(hallFilter)}
+                  onValueChange={(v) =>
+                    setHallFilter(v === "all" ? "all" : Number(v))
                   }
-                });
-                label = kindLabel(best);
-              }
-
-              return (
-                <button
-                  key={d}
-                  onClick={() => {
-                    setAnchor(d);
-                    setView("day");
-                  }}
-                  style={{
-                    padding: 10,
-                    borderRadius: 14,
-                    border: "1px solid #e9e9e9",
-                    background: hasAny ? tone.bg : "#fff",
-                    opacity: isThisMonth ? 1 : 0.45,
-                    cursor: "pointer",
-                    minHeight: 62,
-                    minWidth: 0,
-                    textAlign: "center",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                  }}
                 >
-                  <div style={{ fontWeight: 900, lineHeight: 1 }}>{DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}</div>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue placeholder="اختر" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all">الكل</SelectItem>
+                    {props.halls.map((h) => (
+                      <SelectItem key={h.id} value={String(h.id)}>
+                        {h.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                  {hasAny && (
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                        border: `1px solid ${tone.border}`,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        lineHeight: 1.2,
-                      }}
-                    >
-                      {label}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+              <div className="flex items-end gap-2">
+                <Button
+                  variant="outline"
+                  className="rounded-xl flex-1"
+                  onClick={navPrev}
+                >
+                  السابق
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="rounded-xl flex-1"
+                  onClick={navToday}
+                >
+                  اليوم
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-xl flex-1"
+                  onClick={navNext}
+                >
+                  القادم
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        </CardHeader>
+      </Card>
 
-      {/* Day/Week View (List) */}
-      {view !== "month" && (
-        <div className="grid" style={{ gap: 12 }}>
-          {props.halls
-            .filter((h) => (hallFilter === "all" ? true : h.id === hallFilter))
-            .map((h) => (
-              <div key={h.id} className="card" style={cardStyle}>
-                <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <strong style={{ fontSize: 18 }}>{h.name}</strong>
-                  <span className="badge">{fmtDayHuman(anchor)}</span>
-                </div>
-
-                {view === "week" && (
-                  <div className="small muted" style={{ marginTop: 6 }}>
-                    عرض أسبوعي (قائمة) — بدون سحب يمين/يسار
-                  </div>
-                )}
-
-                <div className="grid" style={{ marginTop: 12 }}>
-                  {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map((d) => (
-                    <div key={`${h.id}_${d}`} className="card" style={{ borderRadius: 16, padding: 12 }}>
-                      <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                        <strong>{fmtDayHuman(d)}</strong>
-                        <span className="muted small">
-                          {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).setLocale("ar").toFormat("dd LLL yyyy")}
-                        </span>
-                      </div>
-
-                      <div className="grid" style={{ marginTop: 10, gap: 10 }}>
-                        {props.slots.map((s) => {
-                          const key = `${d}__${h.id}__${s.id}`;
-                          const list = occMap.get(key) || [];
-                          const has = list.length > 0;
-
-                          return (
-                            <div key={s.id} className="card" style={{ borderRadius: 16 }}>
-                              <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                                <strong style={{ fontSize: 18 }}>{s.name}</strong>
-                                <span className="muted small">
-                                  {s.start_time} - {s.end_time}
-                                </span>
-                              </div>
-
-                              {!has && <div className="small muted" style={{ marginTop: 6 }}>لا توجد حجوزات في هذه الفترة.</div>}
-
-                              {has && (
-                                <div className="grid" style={{ marginTop: 10, gap: 10 }}>
-                                  {list.map((o) => {
-                                    const st = occStatus(o);
-                                    const kind = occType(o);
-                                    const tone = dayToneByStatus([st]);
-                                    const who = o.created_by ? creatorNames[o.created_by] || o.created_by : "";
-                                    const amt = occAmount(o);
-
-                                    return (
-                                      <div key={o.id} className="card" style={{ borderRadius: 16, background: tone.bg, borderColor: tone.border }}>
-                                        <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                                          <strong style={{ fontSize: 18 }}>{occTitle(o)}</strong>
-
-                                          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                                            <span className="badge">{statusLabel(st)}</span>
-
-                                            <Link className="btn" href={`/bookings/${o.booking_id}/edit`} style={{ padding: "8px 10px", borderRadius: 12 }}>
-                                              <span style={{ display: "inline-flex", alignItems: "center" }}>
-                                                <Icon name="edit" />
-                                              </span>
-                                            </Link>
-                                          </div>
-                                        </div>
-
-                                        <div className="row" style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}>
-                                          <span className="badge">{kindLabel(kind)}</span>
-                                          {who ? <span className="badge">أضيف بواسطة: {who}</span> : null}
-                                          {typeof amt === "number" ? <span className="badge">المبلغ: {amt} {o.currency || ""}</span> : null}
-                                        </div>
-
-                                        {(o.client_name || o.client_phone) && (
-                                          <div className="small muted" style={{ marginTop: 10 }}>
-                                            {o.client_name ? `العميل: ${o.client_name}` : ""}
-                                            {o.client_phone ? ` • ${o.client_phone}` : ""}
-                                          </div>
-                                        )}
-
-                                        {o.notes ? <div className="small" style={{ marginTop: 10 }}>{o.notes}</div> : null}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+      {/* محتوى */}
+      <div className="mt-4">
+        {/* Month */}
+        {view === "month" && (
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="font-bold">{monthTitle}</div>
+                <div className="text-xs text-muted-foreground">
+                  اضغط على اليوم لعرض التفاصيل
                 </div>
               </div>
-            ))}
-        </div>
-      )}
+            </CardHeader>
+
+            <CardContent>
+              <div className="grid grid-cols-7 gap-2">
+                {viewDays.map((d) => {
+                  const isThisMonth =
+                    DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month ===
+                    DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
+
+                  const sum = monthSummary.get(d);
+                  const statuses = sum?.statuses || [];
+                  const kinds = sum?.kinds || [];
+                  const hasAny = statuses.length > 0;
+                  const tone = dayToneByStatus(statuses);
+
+                  let label = "";
+                  if (kinds.length > 0) {
+                    const counts = new Map<BookingType, number>();
+                    for (const k of kinds)
+                      counts.set(k, (counts.get(k) || 0) + 1);
+                    let best: BookingType = kinds[0];
+                    let bestN = 0;
+                    counts.forEach((n, k) => {
+                      if (n > bestN) {
+                        best = k;
+                        bestN = n;
+                      }
+                    });
+                    label = kindLabel(best);
+                  }
+
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => {
+                        setAnchor(d);
+                        setView("day");
+                      }}
+                      className={[
+                        "aspect-square rounded-2xl border p-2",
+                        "flex flex-col items-center justify-between",
+                        "transition active:scale-[0.99]",
+                        hasAny ? `${tone.bg} ${tone.border} ring-1 ${tone.ring}` : "",
+                        isThisMonth ? "opacity-100" : "opacity-40",
+                      ].join(" ")}
+                    >
+                      <div className="text-base font-extrabold leading-none text-center">
+                        {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}
+                      </div>
+
+                      {hasAny ? (
+                        <Badge
+                          variant="secondary"
+                          className="rounded-full px-2 py-0.5 text-xs font-bold max-w-full truncate"
+                        >
+                          {label}
+                        </Badge>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">
+                          &nbsp;
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Day/Week */}
+        {view !== "month" && (
+          <div className="grid gap-3">
+            {props.halls
+              .filter((h) => (hallFilter === "all" ? true : h.id === hallFilter))
+              .map((h) => (
+                <Card key={h.id} className="rounded-2xl shadow-sm">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-extrabold text-lg">{h.name}</div>
+                      <Badge variant="secondary" className="rounded-full">
+                        {fmtDayHuman(anchor)}
+                      </Badge>
+                    </div>
+                    {view === "week" && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        عرض أسبوعي (قائمة)
+                      </div>
+                    )}
+                  </CardHeader>
+
+                  <CardContent className="grid gap-3">
+                    {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map(
+                      (d) => (
+                        <Card key={`${h.id}_${d}`} className="rounded-2xl">
+                          <CardHeader className="pb-2">
+                            <div className="flex items-center justify-between">
+                              <div className="font-bold">{fmtDayHuman(d)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).toFormat(
+                                  "dd LLL yyyy"
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+
+                          <CardContent className="grid gap-3">
+                            {props.slots.map((s) => {
+                              const key = `${d}__${h.id}__${s.id}`;
+                              const list = occMap.get(key) || [];
+                              const has = list.length > 0;
+
+                              return (
+                                <Card key={s.id} className="rounded-2xl">
+                                  <CardHeader className="pb-2">
+                                    <div className="flex items-center justify-between">
+                                      <div className="font-extrabold">
+                                        {s.name}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {s.start_time} - {s.end_time}
+                                      </div>
+                                    </div>
+                                  </CardHeader>
+
+                                  <CardContent className="grid gap-2">
+                                    {!has && (
+                                      <div className="text-sm text-muted-foreground">
+                                        لا توجد حجوزات في هذه الفترة.
+                                      </div>
+                                    )}
+
+                                    {has &&
+                                      list.map((o) => {
+                                        const st = occStatus(o);
+                                        const kind = occType(o);
+                                        const tone = dayToneByStatus([st]);
+                                        const who = o.created_by
+                                          ? creatorNames[o.created_by] ||
+                                            o.created_by
+                                          : "";
+                                        const amt = occAmount(o);
+
+                                        return (
+                                          <div
+                                            key={o.id}
+                                            className={[
+                                              "rounded-2xl border p-3 ring-1",
+                                              tone.bg,
+                                              tone.border,
+                                              tone.ring,
+                                            ].join(" ")}
+                                          >
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div className="min-w-0">
+                                                <div className="font-extrabold truncate">
+                                                  {occTitle(o)}
+                                                </div>
+                                                {(o.client_name ||
+                                                  o.client_phone) && (
+                                                  <div className="text-xs text-muted-foreground mt-1">
+                                                    {o.client_name
+                                                      ? `العميل: ${o.client_name}`
+                                                      : ""}
+                                                    {o.client_phone
+                                                      ? ` • ${o.client_phone}`
+                                                      : ""}
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                              <div className="flex items-center gap-2">
+                                                <Badge className="rounded-full">
+                                                  {statusLabel(st)}
+                                                </Badge>
+                                                <Button
+                                                  asChild
+                                                  size="sm"
+                                                  variant="outline"
+                                                  className="rounded-xl"
+                                                >
+                                                  <Link
+                                                    href={`/bookings/${o.booking_id}/edit`}
+                                                  >
+                                                    تعديل
+                                                  </Link>
+                                                </Button>
+                                              </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-2 mt-3">
+                                              <Badge
+                                                variant="secondary"
+                                                className="rounded-full"
+                                              >
+                                                {kindLabel(kind)}
+                                              </Badge>
+                                              {who ? (
+                                                <Badge
+                                                  variant="secondary"
+                                                  className="rounded-full"
+                                                >
+                                                  أضيف بواسطة: {who}
+                                                </Badge>
+                                              ) : null}
+                                              {typeof amt === "number" ? (
+                                                <Badge
+                                                  variant="secondary"
+                                                  className="rounded-full"
+                                                >
+                                                  المبلغ: {amt}{" "}
+                                                  {o.currency || ""}
+                                                </Badge>
+                                              ) : null}
+                                            </div>
+
+                                            {o.notes ? (
+                                              <div className="text-sm mt-3 whitespace-pre-wrap">
+                                                {o.notes}
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        );
+                                      })}
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </CardContent>
+                        </Card>
+                      )
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
