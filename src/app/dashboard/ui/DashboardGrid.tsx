@@ -7,15 +7,14 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 import type { Hall, Slot, DashboardOccurrence, BookingType, BookingStatus } from "@/lib/types";
 
 const BAHRAIN_TZ = "Asia/Bahrain";
-const LOCALE = "ar";
 
 type ViewMode = "day" | "week" | "month";
 
 type Props = {
   halls: Hall[];
   slots: Slot[];
-  days: string[];
-  start: string;
+  days: string[]; // موجود (حتى لو ما نستخدمه بالكامل)
+  start: string; // ISO date (YYYY-MM-DD)
   anchorDate?: string;
   occurrences: DashboardOccurrence[];
 };
@@ -26,19 +25,27 @@ function isoToday() {
 
 function kindLabel(kind: BookingType | null | undefined) {
   switch (kind) {
-    case "death": return "وفاة";
-    case "mawlid": return "مولد";
-    case "fatiha": return "فاتحة";
-    case "wedding": return "زواج";
-    default: return "خاصة";
+    case "death":
+      return "وفاة";
+    case "mawlid":
+      return "مولد";
+    case "fatiha":
+      return "فاتحة";
+    case "wedding":
+      return "زواج";
+    default:
+      return "خاصة";
   }
 }
 
 function statusLabel(st: BookingStatus) {
   switch (st) {
-    case "confirmed": return "مؤكد";
-    case "hold": return "مبدئي";
-    case "cancelled": return "ملغي";
+    case "confirmed":
+      return "مؤكد";
+    case "hold":
+      return "مبدئي";
+    case "cancelled":
+      return "ملغي";
   }
 }
 
@@ -47,7 +54,7 @@ function occDayISO(o: DashboardOccurrence) {
 }
 
 function fmtDayHuman(iso: string) {
-  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).setLocale(LOCALE).toFormat("ccc dd LLL");
+  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).setLocale("ar").toFormat("ccc dd LLL");
 }
 
 function startOfWeekSunday(iso: string) {
@@ -71,6 +78,18 @@ function monthGridDays(anchorISO: string) {
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
 }
 
+function rangeForView(view: ViewMode, anchorISO: string) {
+  if (view === "day") {
+    return { startISO: anchorISO, endISO: addDays(anchorISO, 1) };
+  }
+  if (view === "week") {
+    const startISO = startOfWeekSunday(anchorISO);
+    return { startISO, endISO: addDays(startISO, 7) };
+  }
+  const startISO = monthGridStart(anchorISO);
+  return { startISO, endISO: addDays(startISO, 42) };
+}
+
 function dayToneByStatus(statuses: BookingStatus[]) {
   if (statuses.includes("confirmed")) return { bg: "rgba(176,0,32,0.10)", border: "rgba(176,0,32,0.25)" };
   if (statuses.includes("hold")) return { bg: "rgba(255,152,0,0.12)", border: "rgba(255,152,0,0.25)" };
@@ -80,26 +99,39 @@ function dayToneByStatus(statuses: BookingStatus[]) {
 
 function Icon({ name }: { name: "plus" | "gear" | "logout" | "edit" }) {
   const common = {
-    width: 18, height: 18, viewBox: "0 0 24 24",
-    fill: "none", stroke: "currentColor", strokeWidth: 2,
-    strokeLinecap: "round" as const, strokeLinejoin: "round" as const
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
   };
-  if (name === "plus") return (<svg {...common}><path d="M12 5v14" /><path d="M5 12h14" /></svg>);
-  if (name === "gear") return (
-    <svg {...common}>
-      <path d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.6a7.9 7.9 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.9 7.9 0 0 0-1.7 1L6.5 9.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 .1 1 7.8 7.8 0 0 0-.1 1l-2 1.2 2 3.4 2.3-.6a7.9 7.9 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.9 7.9 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2a7.8 7.8 0 0 0-.1-1z" />
-      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-    </svg>
-  );
-  if (name === "logout") return (
-    <svg {...common}>
-      <path d="M10 17l-1 0a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1" />
-      <path d="M15 12H9" />
-      <path d="M15 12l-3-3" />
-      <path d="M15 12l-3 3" />
-      <path d="M18 19V5" />
-    </svg>
-  );
+  if (name === "plus")
+    return (
+      <svg {...common}>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+      </svg>
+    );
+  if (name === "gear")
+    return (
+      <svg {...common}>
+        <path d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.6a7.9 7.9 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.9 7.9 0 0 0-1.7 1L6.5 9.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 .1 1 7.8 7.8 0 0 0-.1 1l-2 1.2 2 3.4 2.3-.6a7.9 7.9 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.9 7.9 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2a7.8 7.8 0 0 0-.1-1z" />
+        <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+      </svg>
+    );
+  if (name === "logout")
+    return (
+      <svg {...common}>
+        <path d="M10 17l-1 0a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1" />
+        <path d="M15 12H9" />
+        <path d="M15 12l-3-3" />
+        <path d="M15 12l-3 3" />
+        <path d="M18 19V5" />
+      </svg>
+    );
   return (
     <svg {...common}>
       <path d="M12 20h9" />
@@ -111,56 +143,134 @@ function Icon({ name }: { name: "plus" | "gear" | "logout" | "edit" }) {
 function occTitle(o: DashboardOccurrence) {
   return (o.booking_title ?? o.title ?? "").trim() || `حجز #${o.booking_id}`;
 }
+
 function occStatus(o: DashboardOccurrence): BookingStatus {
   return (o.booking_status ?? o.status ?? "hold") as BookingStatus;
 }
+
 function occType(o: DashboardOccurrence): BookingType {
   return (o.booking_type ?? o.kind ?? "special") as BookingType;
 }
+
 function occAmount(o: DashboardOccurrence): number | null {
-  const v = (o.payment_amount ?? o.amount);
+  const v = o.payment_amount ?? o.amount;
   return typeof v === "number" ? v : null;
+}
+
+function flatten(row: any): DashboardOccurrence {
+  const b = row?.bookings ?? null;
+  const paymentAmount = typeof b?.payment_amount === "number" ? b.payment_amount : null;
+  const amount = typeof b?.amount === "number" ? b.amount : null;
+
+  return {
+    id: row.id,
+    hall_id: Number(row.hall_id),
+    slot_id: Number(row.slot_id),
+    start_ts: row.start_ts,
+    end_ts: row.end_ts,
+    booking_id: Number(row.booking_id),
+
+    booking_title: b?.title ?? null,
+    booking_status: b?.status ?? null,
+    booking_type: b?.booking_type ?? null,
+
+    // fallback
+    title: b?.title ?? null,
+    status: b?.status ?? null,
+    kind: b?.booking_type ?? null,
+
+    client_name: b?.client_name ?? null,
+    client_phone: b?.client_phone ?? null,
+    notes: b?.notes ?? null,
+
+    created_by: b?.created_by ?? null,
+
+    payment_amount: paymentAmount,
+    amount,
+    currency: b?.currency ?? null,
+  };
 }
 
 export default function DashboardGrid(props: Props) {
   const supabase = useMemo(() => supabaseBrowser(), []);
+
   const [view, setView] = useState<ViewMode>("month");
   const [anchor, setAnchor] = useState<string>(props.anchorDate || isoToday());
   const [hallFilter, setHallFilter] = useState<number | "all">("all");
 
+  const [occurrences, setOccurrences] = useState<DashboardOccurrence[]>(props.occurrences || []);
+  const [occLoading, setOccLoading] = useState(false);
+  const [occError, setOccError] = useState<string>("");
+
   const [myName, setMyName] = useState<string>("");
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
 
+  // اسم المستخدم الحالي
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
       const uid = data.user?.id;
       if (!uid) return;
 
-      const { data: p } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", uid)
-        .maybeSingle();
+      const { data: p } = await supabase.from("profiles").select("full_name").eq("id", uid).maybeSingle();
 
       const n = (p?.full_name || "").trim();
       setMyName(n || "بدون اسم");
     })();
   }, [supabase]);
 
+  // ✅ تحميل occurrences حسب العرض/التاريخ
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setOccLoading(true);
+      setOccError("");
+
+      const { startISO, endISO } = rangeForView(view, anchor);
+      const startTS = DateTime.fromISO(startISO, { zone: BAHRAIN_TZ }).startOf("day").toISO()!;
+      const endTS = DateTime.fromISO(endISO, { zone: BAHRAIN_TZ }).startOf("day").toISO()!;
+
+      const { data, error } = await supabase
+        .from("booking_occurrences")
+        .select(
+          `id,hall_id,slot_id,start_ts,end_ts,booking_id,bookings:bookings (title,status,booking_type,client_name,client_phone,notes,created_by,payment_amount,amount,currency)`
+        )
+        .gte("start_ts", startTS)
+        .lt("start_ts", endTS)
+        .order("start_ts", { ascending: true });
+
+      if (cancelled) return;
+
+      if (error) {
+        setOccurrences([]);
+        setOccError(error.message);
+      } else {
+        setOccurrences((data || []).map(flatten));
+      }
+
+      setOccLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, view, anchor]);
+
+  // أسماء من أضافوا الحجوزات
   useEffect(() => {
     (async () => {
       const ids = new Set<string>();
-      for (const o of props.occurrences) {
-        if ((o as any).created_by) ids.add((o as any).created_by);
+      for (const o of occurrences) {
+        if (o.created_by) ids.add(o.created_by);
       }
       const list = Array.from(ids);
-      if (list.length === 0) return;
+      if (list.length === 0) {
+        setCreatorNames({});
+        return;
+      }
 
-      const { data } = await supabase
-        .from("profiles")
-        .select("id,full_name")
-        .in("id", list);
+      const { data } = await supabase.from("profiles").select("id,full_name").in("id", list);
 
       const map: Record<string, string> = {};
       (data || []).forEach((x: any) => {
@@ -168,13 +278,15 @@ export default function DashboardGrid(props: Props) {
       });
       setCreatorNames(map);
     })();
-  }, [supabase, props.occurrences]);
+  }, [supabase, occurrences]);
 
+  // فلترة حسب الصالة
   const occFiltered = useMemo(() => {
-    if (hallFilter === "all") return props.occurrences;
-    return props.occurrences.filter((o) => o.hall_id === hallFilter);
-  }, [props.occurrences, hallFilter]);
+    if (hallFilter === "all") return occurrences;
+    return occurrences.filter((o) => o.hall_id === hallFilter);
+  }, [occurrences, hallFilter]);
 
+  // Map: day__hall__slot -> occurrences
   const occMap = useMemo(() => {
     const map = new Map<string, DashboardOccurrence[]>();
     for (const o of occFiltered) {
@@ -212,6 +324,7 @@ export default function DashboardGrid(props: Props) {
 
   const viewDays = useMemo(() => daysForCurrentView(), [view, anchor]);
 
+  // ملخص الشهري: day -> { kinds[], statuses[] }
   const monthSummary = useMemo(() => {
     const summary = new Map<string, { kinds: BookingType[]; statuses: BookingStatus[] }>();
     for (const o of occFiltered) {
@@ -227,7 +340,8 @@ export default function DashboardGrid(props: Props) {
     return summary;
   }, [occFiltered]);
 
-  const cardStyle: React.CSSProperties = { borderRadius: 18, padding: 14, maxWidth: "100%", overflowX: "hidden" };
+  // styles
+  const cardStyle: React.CSSProperties = { borderRadius: 18, padding: 14 };
 
   const pillGroup: React.CSSProperties = {
     display: "grid",
@@ -244,7 +358,6 @@ export default function DashboardGrid(props: Props) {
     color: active ? "#fff" : "#0b66c3",
     fontWeight: 800,
     cursor: "pointer",
-    minWidth: 0,
   });
 
   const actionBtn: React.CSSProperties = {
@@ -259,7 +372,6 @@ export default function DashboardGrid(props: Props) {
     textDecoration: "none",
     fontWeight: 800,
     color: "#0b66c3",
-    whiteSpace: "nowrap",
   };
 
   const actionBtnPrimary: React.CSSProperties = {
@@ -270,10 +382,10 @@ export default function DashboardGrid(props: Props) {
   };
 
   return (
-    <div className="grid" style={{ gap: 12, maxWidth: "100%", overflowX: "hidden" }}>
+    <div className="grid" style={{ gap: 12 }}>
       {/* Header */}
       <div className="card" style={cardStyle}>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 26, fontWeight: 900 }}>جدول الحجوزات</div>
             <div className="muted" style={{ marginTop: 4 }}>
@@ -281,7 +393,7 @@ export default function DashboardGrid(props: Props) {
             </div>
           </div>
 
-          <div className="row" style={{ gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <Link href="/bookings/new" style={actionBtnPrimary}>
               <Icon name="plus" />
               <span>إضافة حجز</span>
@@ -303,52 +415,80 @@ export default function DashboardGrid(props: Props) {
       {/* Controls */}
       <div className="card" style={cardStyle}>
         <div style={pillGroup}>
-          <button style={pillBtn(view === "month")} onClick={() => setView("month")}>شهري</button>
-          <button style={pillBtn(view === "week")} onClick={() => setView("week")}>أسبوعي</button>
-          <button style={pillBtn(view === "day")} onClick={() => setView("day")}>يومي</button>
+          <button style={pillBtn(view === "month")} onClick={() => setView("month")}>
+            شهري
+          </button>
+          <button style={pillBtn(view === "week")} onClick={() => setView("week")}>
+            أسبوعي
+          </button>
+          <button style={pillBtn(view === "day")} onClick={() => setView("day")}>
+            يومي
+          </button>
         </div>
 
         <div className="grid" style={{ marginTop: 12, gap: 10 }}>
-          <div style={{ minWidth: 0 }}>
+          <div>
             <label className="label">اختر تاريخ</label>
             <input
               className="input"
               type="date"
               value={anchor}
               onChange={(e) => setAnchor(e.target.value)}
-              style={{ fontSize: 16, width: "100%", maxWidth: "100%", minWidth: 0 }}
+              style={{
+                fontSize: 16,
+                width: "100%",
+                maxWidth: "100%",
+                boxSizing: "border-box",
+                textAlign: "right",
+                direction: "rtl",
+              }}
             />
           </div>
 
-          <div style={{ minWidth: 0 }}>
+          <div>
             <label className="label">فلتر الصالة</label>
             <select
               className="select"
               value={hallFilter}
               onChange={(e) => setHallFilter(e.target.value === "all" ? "all" : Number(e.target.value))}
-              style={{ fontSize: 16, width: "100%", maxWidth: "100%", minWidth: 0 }}
+              style={{ fontSize: 16, width: "100%", boxSizing: "border-box" }}
             >
               <option value="all">الكل</option>
               {props.halls.map((h) => (
-                <option key={h.id} value={h.id}>{h.name}</option>
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
               ))}
             </select>
           </div>
 
-          <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-            <button className="btn" onClick={navPrev}>السابق</button>
-            <button className="btn" onClick={navToday}>اليوم</button>
-            <button className="btn" onClick={navNext}>القادم</button>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <button className="btn" onClick={navPrev}>
+              السابق
+            </button>
+            <button className="btn" onClick={navToday}>
+              اليوم
+            </button>
+            <button className="btn" onClick={navNext}>
+              القادم
+            </button>
           </div>
+
+          {(occLoading || occError) && (
+            <div className="small" style={{ marginTop: 6 }}>
+              {occLoading ? "... جاري تحميل الحجوزات" : null}
+              {occError ? <span style={{ color: "#b00020" }}>{occError}</span> : null}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Month View */}
       {view === "month" && (
         <div className="card" style={cardStyle}>
-          <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div className="row" style={{ justifyContent: "space-between", gap: 10 }}>
             <strong style={{ fontSize: 16 }}>
-              {DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).setLocale(LOCALE).toFormat("LLLL yyyy")}
+              {DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).setLocale("ar").toFormat("LLLL yyyy")}
             </strong>
             <span className="muted small">اضغط على اليوم لعرض التفاصيل</span>
           </div>
@@ -357,22 +497,26 @@ export default function DashboardGrid(props: Props) {
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-              gap: 6,
+              gap: 8,
               marginTop: 12,
               width: "100%",
               maxWidth: "100%",
+              boxSizing: "border-box",
             }}
           >
             {viewDays.map((d) => {
               const isThisMonth =
-                DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month === DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
+                DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month ===
+                DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
 
               const sum = monthSummary.get(d);
               const statuses = sum?.statuses || [];
               const kinds = sum?.kinds || [];
               const hasAny = statuses.length > 0;
+
               const tone = dayToneByStatus(statuses);
 
+              // أكثر نوع تكراراً
               let label = "";
               if (kinds.length > 0) {
                 const counts = new Map<BookingType, number>();
@@ -380,7 +524,10 @@ export default function DashboardGrid(props: Props) {
                 let best: BookingType = kinds[0];
                 let bestN = 0;
                 counts.forEach((n, k) => {
-                  if (n > bestN) { best = k; bestN = n; }
+                  if (n > bestN) {
+                    best = k;
+                    bestN = n;
+                  }
                 });
                 label = kindLabel(best);
               }
@@ -388,43 +535,39 @@ export default function DashboardGrid(props: Props) {
               return (
                 <button
                   key={d}
-                  onClick={() => { setAnchor(d); setView("day"); }}
+                  onClick={() => {
+                    setAnchor(d);
+                    setView("day");
+                  }}
                   style={{
-                    width: "100%",
-                    minWidth: 0,
-                    textAlign: "start",
-                    padding: 8,
+                    padding: 10,
                     borderRadius: 14,
                     border: "1px solid #e9e9e9",
                     background: hasAny ? tone.bg : "#fff",
                     opacity: isThisMonth ? 1 : 0.45,
                     cursor: "pointer",
-                    minHeight: 56,
+                    minHeight: 62,
+                    minWidth: 0,
+                    textAlign: "center",
                     display: "flex",
                     flexDirection: "column",
-                    alignItems: "flex-start",
-                    justifyContent: "flex-start",
-                    overflow: "hidden",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
                   }}
                 >
-                  <div style={{ fontWeight: 900, fontSize: 14 }}>
-                    {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}
-                  </div>
+                  <div style={{ fontWeight: 900, lineHeight: 1 }}>{DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}</div>
 
                   {hasAny && (
                     <div
                       style={{
-                        marginTop: 6,
                         display: "inline-flex",
                         padding: "4px 8px",
                         borderRadius: 999,
                         border: `1px solid ${tone.border}`,
                         fontSize: 12,
                         fontWeight: 800,
-                        maxWidth: "100%",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
+                        lineHeight: 1.2,
                       }}
                     >
                       {label}
@@ -437,9 +580,9 @@ export default function DashboardGrid(props: Props) {
         </div>
       )}
 
-      {/* Day/Week View */}
+      {/* Day/Week View (List) */}
       {view !== "month" && (
-        <div className="grid" style={{ gap: 12, maxWidth: "100%", overflowX: "hidden" }}>
+        <div className="grid" style={{ gap: 12 }}>
           {props.halls
             .filter((h) => (hallFilter === "all" ? true : h.id === hallFilter))
             .map((h) => (
@@ -456,33 +599,31 @@ export default function DashboardGrid(props: Props) {
                 )}
 
                 <div className="grid" style={{ marginTop: 12 }}>
-                  {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map((dd) => (
-                    <div key={`${h.id}_${dd}`} className="card" style={{ borderRadius: 16, padding: 12, maxWidth: "100%", overflowX: "hidden" }}>
+                  {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map((d) => (
+                    <div key={`${h.id}_${d}`} className="card" style={{ borderRadius: 16, padding: 12 }}>
                       <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                        <strong>{fmtDayHuman(dd)}</strong>
+                        <strong>{fmtDayHuman(d)}</strong>
                         <span className="muted small">
-                          {DateTime.fromISO(dd, { zone: BAHRAIN_TZ }).setLocale(LOCALE).toFormat("dd LLL yyyy")}
+                          {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).setLocale("ar").toFormat("dd LLL yyyy")}
                         </span>
                       </div>
 
                       <div className="grid" style={{ marginTop: 10, gap: 10 }}>
                         {props.slots.map((s) => {
-                          const key = `${dd}__${h.id}__${s.id}`;
+                          const key = `${d}__${h.id}__${s.id}`;
                           const list = occMap.get(key) || [];
                           const has = list.length > 0;
 
                           return (
-                            <div key={s.id} className="card" style={{ borderRadius: 16, maxWidth: "100%", overflowX: "hidden" }}>
+                            <div key={s.id} className="card" style={{ borderRadius: 16 }}>
                               <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                                 <strong style={{ fontSize: 18 }}>{s.name}</strong>
-                                <span className="muted small">{s.start_time} - {s.end_time}</span>
+                                <span className="muted small">
+                                  {s.start_time} - {s.end_time}
+                                </span>
                               </div>
 
-                              {!has && (
-                                <div className="small muted" style={{ marginTop: 6 }}>
-                                  لا توجد حجوزات في هذه الفترة.
-                                </div>
-                              )}
+                              {!has && <div className="small muted" style={{ marginTop: 6 }}>لا توجد حجوزات في هذه الفترة.</div>}
 
                               {has && (
                                 <div className="grid" style={{ marginTop: 10, gap: 10 }}>
@@ -490,26 +631,18 @@ export default function DashboardGrid(props: Props) {
                                     const st = occStatus(o);
                                     const kind = occType(o);
                                     const tone = dayToneByStatus([st]);
-                                    const who = (o as any).created_by ? (creatorNames[(o as any).created_by] || (o as any).created_by) : "";
+                                    const who = o.created_by ? creatorNames[o.created_by] || o.created_by : "";
                                     const amt = occAmount(o);
 
                                     return (
-                                      <div
-                                        key={o.id}
-                                        className="card"
-                                        style={{ borderRadius: 16, background: tone.bg, borderColor: tone.border }}
-                                      >
+                                      <div key={o.id} className="card" style={{ borderRadius: 16, background: tone.bg, borderColor: tone.border }}>
                                         <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                                           <strong style={{ fontSize: 18 }}>{occTitle(o)}</strong>
 
                                           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                                             <span className="badge">{statusLabel(st)}</span>
 
-                                            <Link
-                                              className="btn"
-                                              href={`/bookings/${o.booking_id}/edit`}
-                                              style={{ padding: "8px 10px", borderRadius: 12 }}
-                                            >
+                                            <Link className="btn" href={`/bookings/${o.booking_id}/edit`} style={{ padding: "8px 10px", borderRadius: 12 }}>
                                               <span style={{ display: "inline-flex", alignItems: "center" }}>
                                                 <Icon name="edit" />
                                               </span>
@@ -520,21 +653,17 @@ export default function DashboardGrid(props: Props) {
                                         <div className="row" style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}>
                                           <span className="badge">{kindLabel(kind)}</span>
                                           {who ? <span className="badge">أضيف بواسطة: {who}</span> : null}
-                                          {typeof amt === "number" ? <span className="badge">المبلغ: {amt} {(o as any).currency || ""}</span> : null}
+                                          {typeof amt === "number" ? <span className="badge">المبلغ: {amt} {o.currency || ""}</span> : null}
                                         </div>
 
-                                        {(((o as any).client_name) || ((o as any).client_phone)) && (
+                                        {(o.client_name || o.client_phone) && (
                                           <div className="small muted" style={{ marginTop: 10 }}>
-                                            {(o as any).client_name ? `العميل: ${(o as any).client_name}` : ""}
-                                            {(o as any).client_phone ? ` • ${(o as any).client_phone}` : ""}
+                                            {o.client_name ? `العميل: ${o.client_name}` : ""}
+                                            {o.client_phone ? ` • ${o.client_phone}` : ""}
                                           </div>
                                         )}
 
-                                        {(o as any).notes ? (
-                                          <div className="small" style={{ marginTop: 10 }}>
-                                            {(o as any).notes}
-                                          </div>
-                                        ) : null}
+                                        {o.notes ? <div className="small" style={{ marginTop: 10 }}>{o.notes}</div> : null}
                                       </div>
                                     );
                                   })}

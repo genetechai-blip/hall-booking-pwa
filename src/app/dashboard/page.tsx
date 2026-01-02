@@ -1,119 +1,141 @@
-// src/app/dashboard/page.tsx
 import { DateTime } from "luxon";
-import { supabaseServer } from "@/lib/supabase/server";
 import DashboardGrid from "./ui/DashboardGrid";
+import { supabaseServer } from "@/lib/supabase/server";
+import type { DashboardOccurrence, Hall, Slot } from "@/lib/types";
+
+export const revalidate = 0;
 
 const BAHRAIN_TZ = "Asia/Bahrain";
 
-function startOfWeekSunday(iso: string) {
+function isoToday() {
+  return DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
+}
+
+function addDaysISO(iso: string, n: number) {
+  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).plus({ days: n }).toISODate()!;
+}
+
+function startOfWeekSundayISO(iso: string) {
   const ref = DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).startOf("day");
   const weekday = ref.weekday; // 1=Mon .. 7=Sun
   const daysSinceSunday = weekday % 7; // Sun->0
   return ref.minus({ days: daysSinceSunday }).toISODate()!;
 }
-function addDays(iso: string, n: number) {
-  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).plus({ days: n }).toISODate()!;
+
+function monthGridStartISO(anchorISO: string) {
+  const d = DateTime.fromISO(anchorISO, { zone: BAHRAIN_TZ }).startOf("month");
+  return startOfWeekSundayISO(d.toISODate()!);
 }
-function monthGridStart(iso: string) {
-  const d = DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).startOf("month");
-  return startOfWeekSunday(d.toISODate()!);
+
+function monthGridRange(anchorISO: string) {
+  const start = monthGridStartISO(anchorISO);
+  const endExclusive = addDaysISO(start, 42);
+  return { start, endExclusive };
 }
-function monthGridDays(anchorISO: string) {
-  const start = monthGridStart(anchorISO);
-  return Array.from({ length: 42 }, (_, i) => addDays(start, i));
+
+function flattenOccurrence(row: any): DashboardOccurrence {
+  const b = row?.bookings ?? null;
+
+  const paymentAmount = typeof b?.payment_amount === "number" ? b.payment_amount : null;
+  const amount = typeof b?.amount === "number" ? b.amount : null;
+
+  return {
+    id: row.id,
+
+    hall_id: Number(row.hall_id),
+    slot_id: Number(row.slot_id),
+
+    start_ts: row.start_ts,
+    end_ts: row.end_ts,
+
+    booking_id: Number(row.booking_id),
+
+    booking_title: b?.title ?? null,
+    booking_status: b?.status ?? null,
+    booking_type: b?.booking_type ?? null,
+
+    // fallback (للتوافق)
+    title: b?.title ?? null,
+    status: b?.status ?? null,
+    kind: b?.booking_type ?? null,
+
+    client_name: b?.client_name ?? null,
+    client_phone: b?.client_phone ?? null,
+    notes: b?.notes ?? null,
+
+    created_by: b?.created_by ?? null,
+
+    payment_amount: paymentAmount,
+    amount,
+    currency: b?.currency ?? null,
+  };
 }
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: { view?: string; date?: string };
+  searchParams?: { date?: string };
 }) {
-  const view = (searchParams?.view as "day" | "week" | "month") || "month";
   const anchorDate =
-    searchParams?.date ||
-    DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
+    searchParams?.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date)
+      ? searchParams.date
+      : isoToday();
 
-  // days range for the server query
-  let days: string[] = [];
-  if (view === "day") days = [anchorDate];
-  else if (view === "week") {
-    const start = startOfWeekSunday(anchorDate);
-    days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
-  } else {
-    days = monthGridDays(anchorDate);
-  }
-
-  const startISO = days[0];
-  const endISO = addDays(days[days.length - 1], 1);
+  const { start, endExclusive } = monthGridRange(anchorDate);
 
   const supabase = await supabaseServer();
 
-  const { data: halls } = await supabase.from("halls").select("id,name").order("id");
-  const { data: slots } = await supabase.from("time_slots").select("id,code,name,start_time,end_time").order("id");
+  const { data: hallsRaw } = await supabase
+    .from("halls")
+    .select("id,name")
+    .order("id", { ascending: true });
 
-  // IMPORTANT:
-  // You already have a working query in your project (since the page loads).
-  // Keep your current occurrences query as-is if you already customized it elsewhere.
-  const { data: occurrences } = await supabase
+  const halls: Hall[] = (hallsRaw || []).map((h: any) => ({
+    id: Number(h.id),
+    name: h.name,
+  }));
+
+  const { data: slotsRaw } = await supabase
+    .from("time_slots")
+    .select("id,code,name,start_time,end_time")
+    .order("id", { ascending: true });
+
+  const slots: Slot[] = (slotsRaw || []).map((s: any) => ({
+    id: Number(s.id),
+    code: (s.code ?? String(s.id)) as any,
+    name: s.name,
+    start_time: s.start_time,
+    end_time: s.end_time,
+  }));
+
+  const startTS = DateTime.fromISO(start, { zone: BAHRAIN_TZ })
+    .startOf("day")
+    .toISO()!;
+  const endTS = DateTime.fromISO(endExclusive, { zone: BAHRAIN_TZ })
+    .startOf("day")
+    .toISO()!;
+
+  const { data: occRaw, error: occErr } = await supabase
     .from("booking_occurrences")
-    .select(`
-      id,
-      booking_id,
-      hall_id,
-      slot_id,
-      start_ts,
-      end_ts,
-      kind_occurrence_kind,
-      bookings:bookings(
-        id,
-        title,
-        status,
-        booking_type,
-        payment_amount,
-        currency,
-        client_name,
-        client_phone,
-        notes,
-        created_by
-      )
-    `)
-    .gte("start_ts", DateTime.fromISO(startISO, { zone: BAHRAIN_TZ }).toISO())
-    .lt("start_ts", DateTime.fromISO(endISO, { zone: BAHRAIN_TZ }).toISO());
+    .select(
+      "id,hall_id,slot_id,start_ts,end_ts,booking_id,bookings:bookings(id,title,status,booking_type,client_name,client_phone,notes,created_by,payment_amount,amount,currency)"
+    )
+    .gte("start_ts", startTS)
+    .lt("start_ts", endTS)
+    .order("start_ts", { ascending: true });
 
-  // Flatten (keep your existing shape logic if you already have one)
-  const occFlat =
-    (occurrences || []).map((o: any) => {
-      const b = o.bookings || {};
-      return {
-        id: o.id,
-        booking_id: o.booking_id,
-        hall_id: o.hall_id,
-        slot_id: o.slot_id,
-        start_ts: o.start_ts,
-        end_ts: o.end_ts,
-        booking_title: b.title ?? null,
-        booking_status: b.status ?? null,
-        booking_type: b.booking_type ?? null,
-        payment_amount: b.payment_amount ?? null,
-        currency: b.currency ?? null,
-        client_name: b.client_name ?? null,
-        client_phone: b.client_phone ?? null,
-        notes: b.notes ?? null,
-        created_by: b.created_by ?? null,
-        kind_occurrence_kind: o.kind_occurrence_kind ?? null,
-      };
-    }) || [];
+  const occurrences: DashboardOccurrence[] = occErr
+    ? []
+    : (occRaw || []).map(flattenOccurrence);
 
   return (
-    <div className="container" style={{ paddingTop: 16, paddingBottom: 24 }}>
-      <DashboardGrid
-        halls={(halls || []) as any}
-        slots={(slots || []) as any}
-        days={days}
-        start={startISO}
-        anchorDate={anchorDate}
-        occurrences={occFlat as any}
-      />
-    </div>
+    <DashboardGrid
+      halls={halls}
+      slots={slots}
+      days={[]}
+      start={start}
+      anchorDate={anchorDate}
+      occurrences={occurrences}
+    />
   );
 }
