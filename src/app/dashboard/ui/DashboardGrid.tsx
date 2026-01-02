@@ -7,15 +7,16 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 import type { Hall, Slot, DashboardOccurrence, BookingType, BookingStatus } from "@/lib/types";
 
 const BAHRAIN_TZ = "Asia/Bahrain";
+const LOCALE = "ar";
 
 type ViewMode = "day" | "week" | "month";
 
 type Props = {
   halls: Hall[];
   slots: Slot[];
-  days: string[];          // موجود (حتى لو ما نستخدمه بالكامل)
-  start: string;           // ISO date (YYYY-MM-DD)
-  anchorDate?: string;     // مدعوم
+  days: string[];
+  start: string;
+  anchorDate?: string;
   occurrences: DashboardOccurrence[];
 };
 
@@ -42,11 +43,11 @@ function statusLabel(st: BookingStatus) {
 }
 
 function occDayISO(o: DashboardOccurrence) {
-  return DateTime.fromISO((o as any).start_ts).setZone(BAHRAIN_TZ).toISODate()!;
+  return DateTime.fromISO(o.start_ts).setZone(BAHRAIN_TZ).toISODate()!;
 }
 
 function fmtDayHuman(iso: string) {
-  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).toFormat("ccc dd LLL");
+  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).setLocale(LOCALE).toFormat("ccc dd LLL");
 }
 
 function startOfWeekSunday(iso: string) {
@@ -86,9 +87,7 @@ function Icon({ name }: { name: "plus" | "gear" | "logout" | "edit" }) {
   if (name === "plus") return (<svg {...common}><path d="M12 5v14" /><path d="M5 12h14" /></svg>);
   if (name === "gear") return (
     <svg {...common}>
-      <path
-        d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.6a7.9 7.9 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.9 7.9 0 0 0-1.7 1L6.5 9.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 .1 1 7.8 7.8 0 0 0-.1 1l-2 1.2 2 3.4 2.3-.6a7.9 7.9 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.9 7.9 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2a7.8 7.8 0 0 0-.1-1z"
-      />
+      <path d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.6a7.9 7.9 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.9 7.9 0 0 0-1.7 1L6.5 9.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 .1 1 7.8 7.8 0 0 0-.1 1l-2 1.2 2 3.4 2.3-.6a7.9 7.9 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.9 7.9 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2a7.8 7.8 0 0 0-.1-1z" />
       <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
     </svg>
   );
@@ -109,56 +108,29 @@ function Icon({ name }: { name: "plus" | "gear" | "logout" | "edit" }) {
   );
 }
 
-/** ✅ Helpers: تدعم Flat + Nested (o.bookings) */
-function bOf(o: any) { return o?.bookings || null; }
-
-function occTitle(o: any) {
-  const b = bOf(o);
-  return (o.booking_title ?? o.title ?? b?.title ?? "").trim() || `حجز #${o.booking_id}`;
+function occTitle(o: DashboardOccurrence) {
+  return (o.booking_title ?? o.title ?? "").trim() || `حجز #${o.booking_id}`;
 }
-
-function occStatus(o: any): BookingStatus {
-  const b = bOf(o);
-  return (o.booking_status ?? o.status ?? b?.status ?? "hold") as BookingStatus;
+function occStatus(o: DashboardOccurrence): BookingStatus {
+  return (o.booking_status ?? o.status ?? "hold") as BookingStatus;
 }
-
-function occType(o: any): BookingType {
-  const b = bOf(o);
-  // ✅ أهم سطر: ناخذ النوع من booking نفسه (مو من occurrence)
-  return (o.booking_type ?? b?.booking_type ?? b?.kind ?? "special") as BookingType;
+function occType(o: DashboardOccurrence): BookingType {
+  return (o.booking_type ?? o.kind ?? "special") as BookingType;
 }
-
-function occAmount(o: any): number | null {
-  const b = bOf(o);
-  const v = (o.payment_amount ?? o.amount ?? b?.payment_amount ?? b?.amount);
+function occAmount(o: DashboardOccurrence): number | null {
+  const v = (o.payment_amount ?? o.amount);
   return typeof v === "number" ? v : null;
-}
-
-function occCurrency(o: any): string {
-  const b = bOf(o);
-  return (o.currency ?? b?.currency ?? "") as string;
-}
-
-function occCreatedBy(o: any): string | null {
-  const b = bOf(o);
-  return (o.created_by ?? b?.created_by ?? null) as string | null;
-}
-
-function occCreatedByName(o: any): string | null {
-  const b = bOf(o);
-  return (o.created_by_name ?? b?.profiles?.full_name ?? null) as string | null;
 }
 
 export default function DashboardGrid(props: Props) {
   const supabase = useMemo(() => supabaseBrowser(), []);
-  const [view, setView] = useState<ViewMode>("month"); // ✅ الديفولت شهري
+  const [view, setView] = useState<ViewMode>("month");
   const [anchor, setAnchor] = useState<string>(props.anchorDate || isoToday());
   const [hallFilter, setHallFilter] = useState<number | "all">("all");
 
   const [myName, setMyName] = useState<string>("");
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
 
-  // اسم المستخدم الحالي
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -176,13 +148,11 @@ export default function DashboardGrid(props: Props) {
     })();
   }, [supabase]);
 
-  // أسماء من أضافوا الحجوزات
   useEffect(() => {
     (async () => {
       const ids = new Set<string>();
-      for (const o of props.occurrences as any[]) {
-        const id = occCreatedBy(o);
-        if (id) ids.add(id);
+      for (const o of props.occurrences) {
+        if ((o as any).created_by) ids.add((o as any).created_by);
       }
       const list = Array.from(ids);
       if (list.length === 0) return;
@@ -200,16 +170,14 @@ export default function DashboardGrid(props: Props) {
     })();
   }, [supabase, props.occurrences]);
 
-  // فلترة حسب الصالة
   const occFiltered = useMemo(() => {
     if (hallFilter === "all") return props.occurrences;
-    return props.occurrences.filter((o) => (o as any).hall_id === hallFilter);
+    return props.occurrences.filter((o) => o.hall_id === hallFilter);
   }, [props.occurrences, hallFilter]);
 
-  // Map: day__hall__slot -> occurrences
   const occMap = useMemo(() => {
-    const map = new Map<string, any[]>();
-    for (const o of occFiltered as any[]) {
+    const map = new Map<string, DashboardOccurrence[]>();
+    for (const o of occFiltered) {
       const d = occDayISO(o);
       const key = `${d}__${o.hall_id}__${o.slot_id}`;
       const arr = map.get(key) || [];
@@ -244,10 +212,9 @@ export default function DashboardGrid(props: Props) {
 
   const viewDays = useMemo(() => daysForCurrentView(), [view, anchor]);
 
-  // ✅ ملخص الشهري: day -> { kinds[], statuses[] } (يعتمد على booking_type الحقيقي)
   const monthSummary = useMemo(() => {
     const summary = new Map<string, { kinds: BookingType[]; statuses: BookingStatus[] }>();
-    for (const o of occFiltered as any[]) {
+    for (const o of occFiltered) {
       const d = occDayISO(o);
       const kind = occType(o);
       const st = occStatus(o);
@@ -260,8 +227,7 @@ export default function DashboardGrid(props: Props) {
     return summary;
   }, [occFiltered]);
 
-  // styles
-  const cardStyle: React.CSSProperties = { borderRadius: 18, padding: 14 };
+  const cardStyle: React.CSSProperties = { borderRadius: 18, padding: 14, maxWidth: "100%", overflowX: "hidden" };
 
   const pillGroup: React.CSSProperties = {
     display: "grid",
@@ -278,6 +244,7 @@ export default function DashboardGrid(props: Props) {
     color: active ? "#fff" : "#0b66c3",
     fontWeight: 800,
     cursor: "pointer",
+    minWidth: 0,
   });
 
   const actionBtn: React.CSSProperties = {
@@ -292,6 +259,7 @@ export default function DashboardGrid(props: Props) {
     textDecoration: "none",
     fontWeight: 800,
     color: "#0b66c3",
+    whiteSpace: "nowrap",
   };
 
   const actionBtnPrimary: React.CSSProperties = {
@@ -302,10 +270,10 @@ export default function DashboardGrid(props: Props) {
   };
 
   return (
-    <div className="grid" style={{ gap: 12 }}>
+    <div className="grid" style={{ gap: 12, maxWidth: "100%", overflowX: "hidden" }}>
       {/* Header */}
       <div className="card" style={cardStyle}>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 26, fontWeight: 900 }}>جدول الحجوزات</div>
             <div className="muted" style={{ marginTop: 4 }}>
@@ -313,7 +281,7 @@ export default function DashboardGrid(props: Props) {
             </div>
           </div>
 
-          <div className="row" style={{ gap: 10 }}>
+          <div className="row" style={{ gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <Link href="/bookings/new" style={actionBtnPrimary}>
               <Icon name="plus" />
               <span>إضافة حجز</span>
@@ -341,24 +309,24 @@ export default function DashboardGrid(props: Props) {
         </div>
 
         <div className="grid" style={{ marginTop: 12, gap: 10 }}>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <label className="label">اختر تاريخ</label>
             <input
               className="input"
               type="date"
               value={anchor}
               onChange={(e) => setAnchor(e.target.value)}
-              style={{ fontSize: 16, width: "100%", maxWidth: "100%" }}
+              style={{ fontSize: 16, width: "100%", maxWidth: "100%", minWidth: 0 }}
             />
           </div>
 
-          <div>
+          <div style={{ minWidth: 0 }}>
             <label className="label">فلتر الصالة</label>
             <select
               className="select"
               value={hallFilter}
               onChange={(e) => setHallFilter(e.target.value === "all" ? "all" : Number(e.target.value))}
-              style={{ fontSize: 16 }}
+              style={{ fontSize: 16, width: "100%", maxWidth: "100%", minWidth: 0 }}
             >
               <option value="all">الكل</option>
               {props.halls.map((h) => (
@@ -367,7 +335,7 @@ export default function DashboardGrid(props: Props) {
             </select>
           </div>
 
-          <div className="row" style={{ justifyContent: "space-between" }}>
+          <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
             <button className="btn" onClick={navPrev}>السابق</button>
             <button className="btn" onClick={navToday}>اليوم</button>
             <button className="btn" onClick={navNext}>القادم</button>
@@ -378,14 +346,23 @@ export default function DashboardGrid(props: Props) {
       {/* Month View */}
       {view === "month" && (
         <div className="card" style={cardStyle}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
+          <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
             <strong style={{ fontSize: 16 }}>
-              {DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).toFormat("LLLL yyyy")}
+              {DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).setLocale(LOCALE).toFormat("LLLL yyyy")}
             </strong>
             <span className="muted small">اضغط على اليوم لعرض التفاصيل</span>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, marginTop: 12 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+              gap: 6,
+              marginTop: 12,
+              width: "100%",
+              maxWidth: "100%",
+            }}
+          >
             {viewDays.map((d) => {
               const isThisMonth =
                 DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month === DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
@@ -394,10 +371,8 @@ export default function DashboardGrid(props: Props) {
               const statuses = sum?.statuses || [];
               const kinds = sum?.kinds || [];
               const hasAny = statuses.length > 0;
-
               const tone = dayToneByStatus(statuses);
 
-              // أكثر نوع تكراراً
               let label = "";
               if (kinds.length > 0) {
                 const counts = new Map<BookingType, number>();
@@ -415,17 +390,24 @@ export default function DashboardGrid(props: Props) {
                   key={d}
                   onClick={() => { setAnchor(d); setView("day"); }}
                   style={{
+                    width: "100%",
+                    minWidth: 0,
                     textAlign: "start",
-                    padding: 10,
+                    padding: 8,
                     borderRadius: 14,
                     border: "1px solid #e9e9e9",
                     background: hasAny ? tone.bg : "#fff",
                     opacity: isThisMonth ? 1 : 0.45,
                     cursor: "pointer",
-                    minHeight: 62,
+                    minHeight: 56,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    justifyContent: "flex-start",
+                    overflow: "hidden",
                   }}
                 >
-                  <div style={{ fontWeight: 900 }}>
+                  <div style={{ fontWeight: 900, fontSize: 14 }}>
                     {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}
                   </div>
 
@@ -439,6 +421,10 @@ export default function DashboardGrid(props: Props) {
                         border: `1px solid ${tone.border}`,
                         fontSize: 12,
                         fontWeight: 800,
+                        maxWidth: "100%",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                       }}
                     >
                       {label}
@@ -451,14 +437,14 @@ export default function DashboardGrid(props: Props) {
         </div>
       )}
 
-      {/* Day/Week View (List) */}
+      {/* Day/Week View */}
       {view !== "month" && (
-        <div className="grid" style={{ gap: 12 }}>
+        <div className="grid" style={{ gap: 12, maxWidth: "100%", overflowX: "hidden" }}>
           {props.halls
             .filter((h) => (hallFilter === "all" ? true : h.id === hallFilter))
             .map((h) => (
               <div key={h.id} className="card" style={cardStyle}>
-                <div className="row" style={{ justifyContent: "space-between" }}>
+                <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <strong style={{ fontSize: 18 }}>{h.name}</strong>
                   <span className="badge">{fmtDayHuman(anchor)}</span>
                 </div>
@@ -470,22 +456,24 @@ export default function DashboardGrid(props: Props) {
                 )}
 
                 <div className="grid" style={{ marginTop: 12 }}>
-                  {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map((d) => (
-                    <div key={`${h.id}_${d}`} className="card" style={{ borderRadius: 16, padding: 12 }}>
-                      <div className="row" style={{ justifyContent: "space-between" }}>
-                        <strong>{fmtDayHuman(d)}</strong>
-                        <span className="muted small">{DateTime.fromISO(d, { zone: BAHRAIN_TZ }).toFormat("dd LLL yyyy")}</span>
+                  {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map((dd) => (
+                    <div key={`${h.id}_${dd}`} className="card" style={{ borderRadius: 16, padding: 12, maxWidth: "100%", overflowX: "hidden" }}>
+                      <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                        <strong>{fmtDayHuman(dd)}</strong>
+                        <span className="muted small">
+                          {DateTime.fromISO(dd, { zone: BAHRAIN_TZ }).setLocale(LOCALE).toFormat("dd LLL yyyy")}
+                        </span>
                       </div>
 
                       <div className="grid" style={{ marginTop: 10, gap: 10 }}>
                         {props.slots.map((s) => {
-                          const key = `${d}__${h.id}__${s.id}`;
-                          const list = (occMap.get(key) || []) as any[];
+                          const key = `${dd}__${h.id}__${s.id}`;
+                          const list = occMap.get(key) || [];
                           const has = list.length > 0;
 
                           return (
-                            <div key={s.id} className="card" style={{ borderRadius: 16 }}>
-                              <div className="row" style={{ justifyContent: "space-between" }}>
+                            <div key={s.id} className="card" style={{ borderRadius: 16, maxWidth: "100%", overflowX: "hidden" }}>
+                              <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                                 <strong style={{ fontSize: 18 }}>{s.name}</strong>
                                 <span className="muted small">{s.start_time} - {s.end_time}</span>
                               </div>
@@ -502,13 +490,8 @@ export default function DashboardGrid(props: Props) {
                                     const st = occStatus(o);
                                     const kind = occType(o);
                                     const tone = dayToneByStatus([st]);
-
-                                    const createdBy = occCreatedBy(o);
-                                    const createdByName = occCreatedByName(o);
-                                    const who = createdBy ? (creatorNames[createdBy] || createdByName || createdBy) : "";
-
+                                    const who = (o as any).created_by ? (creatorNames[(o as any).created_by] || (o as any).created_by) : "";
                                     const amt = occAmount(o);
-                                    const cur = occCurrency(o);
 
                                     return (
                                       <div
@@ -516,10 +499,10 @@ export default function DashboardGrid(props: Props) {
                                         className="card"
                                         style={{ borderRadius: 16, background: tone.bg, borderColor: tone.border }}
                                       >
-                                        <div className="row" style={{ justifyContent: "space-between" }}>
+                                        <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                                           <strong style={{ fontSize: 18 }}>{occTitle(o)}</strong>
 
-                                          <div className="row" style={{ gap: 8 }}>
+                                          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                                             <span className="badge">{statusLabel(st)}</span>
 
                                             <Link
@@ -537,19 +520,19 @@ export default function DashboardGrid(props: Props) {
                                         <div className="row" style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}>
                                           <span className="badge">{kindLabel(kind)}</span>
                                           {who ? <span className="badge">أضيف بواسطة: {who}</span> : null}
-                                          {typeof amt === "number" ? <span className="badge">المبلغ: {amt} {cur}</span> : null}
+                                          {typeof amt === "number" ? <span className="badge">المبلغ: {amt} {(o as any).currency || ""}</span> : null}
                                         </div>
 
-                                        {(o.client_name || o.client_phone || bOf(o)?.client_name || bOf(o)?.client_phone) && (
+                                        {(((o as any).client_name) || ((o as any).client_phone)) && (
                                           <div className="small muted" style={{ marginTop: 10 }}>
-                                            {(o.client_name ?? bOf(o)?.client_name) ? `العميل: ${(o.client_name ?? bOf(o)?.client_name)}` : ""}
-                                            {(o.client_phone ?? bOf(o)?.client_phone) ? ` • ${(o.client_phone ?? bOf(o)?.client_phone)}` : ""}
+                                            {(o as any).client_name ? `العميل: ${(o as any).client_name}` : ""}
+                                            {(o as any).client_phone ? ` • ${(o as any).client_phone}` : ""}
                                           </div>
                                         )}
 
-                                        {(o.notes ?? bOf(o)?.notes) ? (
+                                        {(o as any).notes ? (
                                           <div className="small" style={{ marginTop: 10 }}>
-                                            {o.notes ?? bOf(o)?.notes}
+                                            {(o as any).notes}
                                           </div>
                                         ) : null}
                                       </div>
