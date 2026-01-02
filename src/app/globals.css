@@ -3,6 +3,21 @@
 @tailwind components;
 @tailwind utilities;
 
+input[type="date"]{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="date"]::-webkit-date-and-time-value{
+  text-align: center;
+  width: 100%;
+}
+
+
+
 :root {
   color-scheme: light;
   font-size: 16px;

@@ -333,18 +333,20 @@ export default function DashboardGrid(props: Props) {
 
             <div className="grid gap-3 sm:grid-cols-3">
               
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold mb-1 text-right">اختر تاريخ</div>
-                  {/* Wrapper LTR + توسيط */}
-                  <div dir="ltr" className="w-full">
-                    <Input
-                      type="date"
-                      value={anchor}
-                      onChange={(e) => setAnchor(e.target.value)}
-                      className="rounded-xl w-full max-w-[420px] mx-auto text-center"
-                    />
+                  <div className="min-w-0 w-full">
+                    <div className="text-sm font-semibold mb-1 text-right">اختر تاريخ</div>
+
+                    {/* مهم: نخلي RTL طبيعي، فقط الـ input نفسه LTR */}
+                    <div className="w-full max-w-full overflow-hidden">
+                      <Input
+                        dir="ltr"
+                        type="date"
+                        value={anchor}
+                        onChange={(e) => setAnchor(e.target.value)}
+                        className="block w-full max-w-full min-w-0 rounded-xl text-center"
+                      />
+                    </div>
                   </div>
-                </div>
 
 
               <div className="min-w-0">
