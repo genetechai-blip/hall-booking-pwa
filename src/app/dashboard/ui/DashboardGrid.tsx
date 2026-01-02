@@ -64,6 +64,22 @@ function kindLabel(kind: BookingType | null | undefined) {
   }
 }
 
+// ✅ حرف واحد للموبايل
+function kindShortLabel(kind: BookingType | null | undefined) {
+  switch (kind) {
+    case "death":
+      return "و";
+    case "mawlid":
+      return "م";
+    case "fatiha":
+      return "ف";
+    case "wedding":
+      return "ز";
+    default:
+      return "خ";
+  }
+}
+
 function statusLabel(st: BookingStatus) {
   switch (st) {
     case "confirmed":
@@ -332,22 +348,21 @@ export default function DashboardGrid(props: Props) {
             </Tabs>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              
-                  <div className="min-w-0 w-full">
-                    <div className="text-sm font-semibold mb-1 text-right">اختر تاريخ</div>
+              <div className="min-w-0 w-full">
+                <div className="text-sm font-semibold mb-1 text-right">
+                  اختر تاريخ
+                </div>
 
-                    {/* مهم: نخلي RTL طبيعي، فقط الـ input نفسه LTR */}
-                    <div className="w-full max-w-full overflow-hidden">
-                      <Input
-                        dir="ltr"
-                        type="date"
-                        value={anchor}
-                        onChange={(e) => setAnchor(e.target.value)}
-                        className="block w-full max-w-full min-w-0 rounded-xl text-center"
-                      />
-                    </div>
-                  </div>
-
+                <div className="w-full max-w-full overflow-hidden">
+                  <Input
+                    dir="ltr"
+                    type="date"
+                    value={anchor}
+                    onChange={(e) => setAnchor(e.target.value)}
+                    className="block w-full max-w-full min-w-0 rounded-xl text-center"
+                  />
+                </div>
+              </div>
 
               <div className="min-w-0">
                 <div className="text-sm font-semibold mb-1">فلتر الصالة</div>
@@ -415,9 +430,7 @@ export default function DashboardGrid(props: Props) {
 
             <CardContent>
               <div className="grid grid-cols-7 gap-2">
-
-
-              {viewDays.map((d) => {
+                {viewDays.map((d) => {
                   const isThisMonth =
                     DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month ===
                     DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
@@ -429,6 +442,7 @@ export default function DashboardGrid(props: Props) {
 
                   // أكثر نوع تكراراً
                   let label = "";
+                  let short = "";
                   if (kinds.length > 0) {
                     const counts = new Map<BookingType, number>();
                     for (const k of kinds) counts.set(k, (counts.get(k) || 0) + 1);
@@ -441,9 +455,9 @@ export default function DashboardGrid(props: Props) {
                       }
                     });
                     label = kindLabel(best);
+                    short = kindShortLabel(best);
                   }
 
-                  // نستخدم ألوان هادية بدون ring (عشان ما تبين الخانة أكبر)
                   const tone = dayToneByStatus(statuses);
 
                   return (
@@ -454,29 +468,30 @@ export default function DashboardGrid(props: Props) {
                         setView("day");
                       }}
                       className={[
-                        // ✅ حجم ثابت ومتناسق على الموبايل + يكبر شوي على الشاشات الكبيرة
                         "h-[56px] sm:h-[76px] w-full",
                         "rounded-2xl border",
                         "flex flex-col items-center justify-center gap-1",
                         "transition active:scale-[0.99]",
                         "px-1",
-                        // ألوان هادية (بدون ring)
                         hasAny ? `${tone.bg} ${tone.border}` : "bg-background",
                         isThisMonth ? "opacity-100" : "opacity-40",
                       ].join(" ")}
                     >
-                      {/* الرقم في النص بالضبط */}
                       <div className="text-[16px] sm:text-[18px] font-extrabold leading-none text-center">
                         {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}
                       </div>
 
-                      {/* ✅ النص كامل (وفاة/مولد/زواج/خاصة) بدون تكسير */}
                       {hasAny ? (
                         <div className="w-full px-1">
-                          <div className="mx-auto max-w-full rounded-full bg-white/70 border px-2 py-[2px]
-                                          text-[11px] sm:text-[12px] font-bold
-                                          whitespace-nowrap overflow-hidden text-ellipsis text-center">
-                            {label}
+                          <div
+                            className="mx-auto max-w-full rounded-full bg-white/70 border px-2 py-[2px]
+                                       text-[11px] sm:text-[12px] font-bold
+                                       whitespace-nowrap overflow-hidden text-ellipsis text-center"
+                            title={label}
+                          >
+                            {/* ✅ موبايل: حرف واحد فقط  |  ✅ sm+: الكلمة كاملة */}
+                            <span className="sm:hidden">{short}</span>
+                            <span className="hidden sm:inline">{label}</span>
                           </div>
                         </div>
                       ) : (
@@ -485,9 +500,7 @@ export default function DashboardGrid(props: Props) {
                     </button>
                   );
                 })}
-
               </div>
-            
             </CardContent>
           </Card>
         )}
@@ -518,9 +531,11 @@ export default function DashboardGrid(props: Props) {
                       (d) => (
                         <Card key={`${h.id}_${d}`} className="rounded-2xl">
                           <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
-                              <div className="font-bold">{fmtDayHuman(d)}</div>
-                              <div className="text-xs text-muted-foreground">
+                            <div className="flex items-center justify-between gap-2 min-w-0">
+                              <div className="font-bold truncate min-w-0">
+                                {fmtDayHuman(d)}
+                              </div>
+                              <div className="text-xs text-muted-foreground whitespace-nowrap">
                                 {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).toFormat(
                                   "dd LLL yyyy"
                                 )}
@@ -537,11 +552,11 @@ export default function DashboardGrid(props: Props) {
                               return (
                                 <Card key={s.id} className="rounded-2xl">
                                   <CardHeader className="pb-2">
-                                    <div className="flex items-center justify-between">
-                                      <div className="font-extrabold">
+                                    <div className="flex items-center justify-between gap-2 min-w-0">
+                                      <div className="font-extrabold truncate min-w-0">
                                         {s.name}
                                       </div>
-                                      <div className="text-xs text-muted-foreground">
+                                      <div className="text-xs text-muted-foreground whitespace-nowrap">
                                         {s.start_time} - {s.end_time}
                                       </div>
                                     </div>
@@ -570,48 +585,46 @@ export default function DashboardGrid(props: Props) {
                                             key={o.id}
                                             className={[
                                               "rounded-2xl border p-3 ring-1",
+                                              "w-full max-w-full overflow-hidden", // ✅ يمنع خروج المحتوى
                                               tone.bg,
                                               tone.border,
                                               tone.ring,
                                             ].join(" ")}
                                           >
-                                            <div className="flex items-start justify-between gap-2">
-                                              <div className="min-w-0">
+                                            {/* ✅ على الموبايل نخليها عمودية لتفادي overflow */}
+                                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 min-w-0">
+                                              <div className="min-w-0 w-full">
                                                 <div className="font-extrabold truncate">
                                                   {occTitle(o)}
                                                 </div>
-                                                {(o.client_name ||
-                                                  o.client_phone) && (
-                                                  <div className="text-xs text-muted-foreground mt-1">
-                                                    {o.client_name
-                                                      ? `العميل: ${o.client_name}`
-                                                      : ""}
-                                                    {o.client_phone
-                                                      ? ` • ${o.client_phone}`
-                                                      : ""}
+
+                                                {(o.client_name || o.client_phone) && (
+                                                  <div className="text-xs text-muted-foreground mt-1 break-words">
+                                                    {o.client_name ? `العميل: ${o.client_name}` : ""}
+                                                    {o.client_phone ? ` • ${o.client_phone}` : ""}
                                                   </div>
                                                 )}
                                               </div>
 
-                                              <div className="flex items-center gap-2">
+                                              <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
                                                 <Badge className="rounded-full">
                                                   {statusLabel(st)}
                                                 </Badge>
+
                                                 <Button
                                                   asChild
                                                   size="sm"
                                                   variant="outline"
                                                   className="rounded-xl"
                                                 >
-                                                  <Link
-                                                    href={`/bookings/${o.booking_id}/edit`}
-                                                  >
+                                                  <Link href={`/bookings/${o.booking_id}/edit`}>
                                                     تعديل
                                                   </Link>
                                                 </Button>
                                               </div>
                                             </div>
 
+                                            {/* ✅ بادجات تحت مع لف */}
                                             <div className="flex flex-wrap gap-2 mt-3">
                                               <Badge
                                                 variant="secondary"
@@ -619,27 +632,28 @@ export default function DashboardGrid(props: Props) {
                                               >
                                                 {kindLabel(kind)}
                                               </Badge>
+
                                               {who ? (
                                                 <Badge
                                                   variant="secondary"
-                                                  className="rounded-full"
+                                                  className="rounded-full break-words"
                                                 >
                                                   أضيف بواسطة: {who}
                                                 </Badge>
                                               ) : null}
+
                                               {typeof amt === "number" ? (
                                                 <Badge
                                                   variant="secondary"
                                                   className="rounded-full"
                                                 >
-                                                  المبلغ: {amt}{" "}
-                                                  {o.currency || ""}
+                                                  المبلغ: {amt} {o.currency || ""}
                                                 </Badge>
                                               ) : null}
                                             </div>
 
                                             {o.notes ? (
-                                              <div className="text-sm mt-3 whitespace-pre-wrap">
+                                              <div className="text-sm mt-3 whitespace-pre-wrap break-words">
                                                 {o.notes}
                                               </div>
                                             ) : null}
