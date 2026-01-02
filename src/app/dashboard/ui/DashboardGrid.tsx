@@ -42,7 +42,7 @@ function statusLabel(st: BookingStatus) {
 }
 
 function occDayISO(o: DashboardOccurrence) {
-  return DateTime.fromISO(o.start_ts).setZone(BAHRAIN_TZ).toISODate()!;
+  return DateTime.fromISO((o as any).start_ts).setZone(BAHRAIN_TZ).toISODate()!;
 }
 
 function fmtDayHuman(iso: string) {
@@ -86,7 +86,9 @@ function Icon({ name }: { name: "plus" | "gear" | "logout" | "edit" }) {
   if (name === "plus") return (<svg {...common}><path d="M12 5v14" /><path d="M5 12h14" /></svg>);
   if (name === "gear") return (
     <svg {...common}>
-      <path d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.6a7.9 7.9 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.9 7.9 0 0 0-1.7 1L6.5 9.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 .1 1 7.8 7.8 0 0 0-.1 1l-2 1.2 2 3.4 2.3-.6a7.9 7.9 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.9 7.9 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2a7.8 7.8 0 0 0-.1-1z" />
+      <path
+        d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.6a7.9 7.9 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.9 7.9 0 0 0-1.7 1L6.5 9.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 .1 1 7.8 7.8 0 0 0-.1 1l-2 1.2 2 3.4 2.3-.6a7.9 7.9 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.9 7.9 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2a7.8 7.8 0 0 0-.1-1z"
+      />
       <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
     </svg>
   );
@@ -107,18 +109,44 @@ function Icon({ name }: { name: "plus" | "gear" | "logout" | "edit" }) {
   );
 }
 
-function occTitle(o: DashboardOccurrence) {
-  return (o.booking_title ?? o.title ?? "").trim() || `حجز #${o.booking_id}`;
+/** ✅ Helpers: تدعم Flat + Nested (o.bookings) */
+function bOf(o: any) { return o?.bookings || null; }
+
+function occTitle(o: any) {
+  const b = bOf(o);
+  return (o.booking_title ?? o.title ?? b?.title ?? "").trim() || `حجز #${o.booking_id}`;
 }
-function occStatus(o: DashboardOccurrence): BookingStatus {
-  return (o.booking_status ?? o.status ?? "hold") as BookingStatus;
+
+function occStatus(o: any): BookingStatus {
+  const b = bOf(o);
+  return (o.booking_status ?? o.status ?? b?.status ?? "hold") as BookingStatus;
 }
-function occType(o: DashboardOccurrence): BookingType {
-  return (o.booking_type ?? o.kind ?? "special") as BookingType;
+
+function occType(o: any): BookingType {
+  const b = bOf(o);
+  // ✅ أهم سطر: ناخذ النوع من booking نفسه (مو من occurrence)
+  return (o.booking_type ?? b?.booking_type ?? b?.kind ?? "special") as BookingType;
 }
-function occAmount(o: DashboardOccurrence): number | null {
-  const v = (o.payment_amount ?? o.amount);
+
+function occAmount(o: any): number | null {
+  const b = bOf(o);
+  const v = (o.payment_amount ?? o.amount ?? b?.payment_amount ?? b?.amount);
   return typeof v === "number" ? v : null;
+}
+
+function occCurrency(o: any): string {
+  const b = bOf(o);
+  return (o.currency ?? b?.currency ?? "") as string;
+}
+
+function occCreatedBy(o: any): string | null {
+  const b = bOf(o);
+  return (o.created_by ?? b?.created_by ?? null) as string | null;
+}
+
+function occCreatedByName(o: any): string | null {
+  const b = bOf(o);
+  return (o.created_by_name ?? b?.profiles?.full_name ?? null) as string | null;
 }
 
 export default function DashboardGrid(props: Props) {
@@ -152,8 +180,9 @@ export default function DashboardGrid(props: Props) {
   useEffect(() => {
     (async () => {
       const ids = new Set<string>();
-      for (const o of props.occurrences) {
-        if (o.created_by) ids.add(o.created_by);
+      for (const o of props.occurrences as any[]) {
+        const id = occCreatedBy(o);
+        if (id) ids.add(id);
       }
       const list = Array.from(ids);
       if (list.length === 0) return;
@@ -174,13 +203,13 @@ export default function DashboardGrid(props: Props) {
   // فلترة حسب الصالة
   const occFiltered = useMemo(() => {
     if (hallFilter === "all") return props.occurrences;
-    return props.occurrences.filter((o) => o.hall_id === hallFilter);
+    return props.occurrences.filter((o) => (o as any).hall_id === hallFilter);
   }, [props.occurrences, hallFilter]);
 
   // Map: day__hall__slot -> occurrences
   const occMap = useMemo(() => {
-    const map = new Map<string, DashboardOccurrence[]>();
-    for (const o of occFiltered) {
+    const map = new Map<string, any[]>();
+    for (const o of occFiltered as any[]) {
       const d = occDayISO(o);
       const key = `${d}__${o.hall_id}__${o.slot_id}`;
       const arr = map.get(key) || [];
@@ -215,10 +244,10 @@ export default function DashboardGrid(props: Props) {
 
   const viewDays = useMemo(() => daysForCurrentView(), [view, anchor]);
 
-  // ملخص الشهري: day -> { kinds[], statuses[] }
+  // ✅ ملخص الشهري: day -> { kinds[], statuses[] } (يعتمد على booking_type الحقيقي)
   const monthSummary = useMemo(() => {
     const summary = new Map<string, { kinds: BookingType[]; statuses: BookingStatus[] }>();
-    for (const o of occFiltered) {
+    for (const o of occFiltered as any[]) {
       const d = occDayISO(o);
       const kind = occType(o);
       const st = occStatus(o);
@@ -451,7 +480,7 @@ export default function DashboardGrid(props: Props) {
                       <div className="grid" style={{ marginTop: 10, gap: 10 }}>
                         {props.slots.map((s) => {
                           const key = `${d}__${h.id}__${s.id}`;
-                          const list = occMap.get(key) || [];
+                          const list = (occMap.get(key) || []) as any[];
                           const has = list.length > 0;
 
                           return (
@@ -473,8 +502,13 @@ export default function DashboardGrid(props: Props) {
                                     const st = occStatus(o);
                                     const kind = occType(o);
                                     const tone = dayToneByStatus([st]);
-                                    const who = o.created_by ? (creatorNames[o.created_by] || o.created_by) : "";
+
+                                    const createdBy = occCreatedBy(o);
+                                    const createdByName = occCreatedByName(o);
+                                    const who = createdBy ? (creatorNames[createdBy] || createdByName || createdBy) : "";
+
                                     const amt = occAmount(o);
+                                    const cur = occCurrency(o);
 
                                     return (
                                       <div
@@ -503,19 +537,19 @@ export default function DashboardGrid(props: Props) {
                                         <div className="row" style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}>
                                           <span className="badge">{kindLabel(kind)}</span>
                                           {who ? <span className="badge">أضيف بواسطة: {who}</span> : null}
-                                          {typeof amt === "number" ? <span className="badge">المبلغ: {amt} {o.currency || ""}</span> : null}
+                                          {typeof amt === "number" ? <span className="badge">المبلغ: {amt} {cur}</span> : null}
                                         </div>
 
-                                        {(o.client_name || o.client_phone) && (
+                                        {(o.client_name || o.client_phone || bOf(o)?.client_name || bOf(o)?.client_phone) && (
                                           <div className="small muted" style={{ marginTop: 10 }}>
-                                            {o.client_name ? `العميل: ${o.client_name}` : ""}
-                                            {o.client_phone ? ` • ${o.client_phone}` : ""}
+                                            {(o.client_name ?? bOf(o)?.client_name) ? `العميل: ${(o.client_name ?? bOf(o)?.client_name)}` : ""}
+                                            {(o.client_phone ?? bOf(o)?.client_phone) ? ` • ${(o.client_phone ?? bOf(o)?.client_phone)}` : ""}
                                           </div>
                                         )}
 
-                                        {o.notes ? (
+                                        {(o.notes ?? bOf(o)?.notes) ? (
                                           <div className="small" style={{ marginTop: 10 }}>
-                                            {o.notes}
+                                            {o.notes ?? bOf(o)?.notes}
                                           </div>
                                         ) : null}
                                       </div>
