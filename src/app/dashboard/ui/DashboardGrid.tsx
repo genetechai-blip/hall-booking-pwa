@@ -485,13 +485,14 @@ export default function DashboardGrid(props: Props) {
                         <div className="w-full px-1">
                           <div
                             className="mx-auto max-w-full rounded-full bg-white/70 border px-2 py-[2px]
-                                       text-[11px] sm:text-[12px] font-bold
-                                       whitespace-nowrap overflow-hidden text-ellipsis text-center"
+                                      text-[11px] sm:text-[12px] font-bold text-center"
                             title={label}
                           >
-                            {/* ✅ موبايل: حرف واحد فقط  |  ✅ sm+: الكلمة كاملة */}
-                            <span className="sm:hidden">{short}</span>
-                            <span className="hidden sm:inline">{label}</span>
+                            {/* ✅ موبايل: حرف واحد بدون ellipsis */}
+                            <span className="sm:hidden leading-none">{short}</span>
+
+                            {/* ✅ شاشات أكبر: الكلمة كاملة مع قص أنيق */}
+                            <span className="hidden sm:inline truncate">{label}</span>
                           </div>
                         </div>
                       ) : (
