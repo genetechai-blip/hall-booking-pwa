@@ -33,7 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { Pencil, CheckCircle2, Clock3, Ban } from "lucide-react";
+import { PencilLine, Check, Clock3, X } from "lucide-react";
 
 const BAHRAIN_TZ = "Asia/Bahrain";
 type ViewMode = "day" | "week" | "month";
@@ -66,7 +66,7 @@ function kindLabel(kind: BookingType | null | undefined) {
   }
 }
 
-// حرف واحد للموبايل
+// ✅ حرف واحد للموبايل
 function kindShortLabel(kind: BookingType | null | undefined) {
   switch (kind) {
     case "death":
@@ -93,36 +93,24 @@ function statusLabel(st: BookingStatus) {
   }
 }
 
-function statusMeta(st: BookingStatus) {
-  if (st === "confirmed") return { Icon: CheckCircle2, title: "مؤكد" };
-  if (st === "hold") return { Icon: Clock3, title: "مبدئي" };
-  return { Icon: Ban, title: "ملغي" };
+function statusIcon(st: BookingStatus) {
+  switch (st) {
+    case "confirmed":
+      return <Check className="h-4 w-4" />;
+    case "hold":
+      return <Clock3 className="h-4 w-4" />;
+    case "cancelled":
+      return <X className="h-4 w-4" />;
+  }
 }
 
-function currencySymbol(code?: string | null) {
-  const c = (code || "").toUpperCase();
-  switch (c) {
-    case "BHD":
-      return "د.ب";
-    case "USD":
-      return "$";
-    case "EUR":
-      return "€";
-    case "GBP":
-      return "£";
-    case "AED":
-      return "د.إ";
-    case "SAR":
-      return "ر.س";
-    case "QAR":
-      return "ر.ق";
-    case "KWD":
-      return "د.ك";
-    case "OMR":
-      return "ر.ع";
-    default:
-      return c || "";
-  }
+function currencySymbol(cur?: string | null) {
+  // اللي طلبته: رمز/اختصار، مو كلمة "دينار"
+  // إذا عندك عملات ثانية لاحقاً نوسعها
+  if (!cur) return "د.ب";
+  const u = String(cur).toUpperCase();
+  if (u === "BHD") return "د.ب";
+  return cur;
 }
 
 function occDayISO(o: DashboardOccurrence) {
@@ -349,7 +337,14 @@ export default function DashboardGrid(props: Props) {
                     ⋯
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl">
+
+                {/* ✅ مسافة من حافة الشاشة + منع الالتصاق */}
+                <DropdownMenuContent
+                  align="end"
+                  sideOffset={8}
+                  collisionPadding={12}
+                  className="rounded-xl w-44 p-1"
+                >
                   <DropdownMenuItem asChild>
                     <Link href="/bookings/new">إضافة حجز</Link>
                   </DropdownMenuItem>
@@ -386,6 +381,7 @@ export default function DashboardGrid(props: Props) {
                 <div className="text-sm font-semibold mb-1 text-right">
                   اختر تاريخ
                 </div>
+
                 <div className="w-full max-w-full overflow-hidden">
                   <Input
                     dir="ltr"
@@ -516,17 +512,18 @@ export default function DashboardGrid(props: Props) {
 
                       {hasAny ? (
                         <div className="w-full px-1">
+                          {/* ✅ هنا الحل: لا Ellipsis على الموبايل */}
                           <div
-                            className="mx-auto max-w-full rounded-full bg-white/70 border
-                                       px-2 py-[2px]
-                                       text-[12px] sm:text-[12px] font-extrabold
-                                       leading-none
-                                       whitespace-nowrap overflow-hidden text-ellipsis
-                                       text-center flex items-center justify-center"
+                            className="mx-auto max-w-full rounded-full bg-white/70 border px-2 py-[2px] text-[11px] sm:text-[12px] font-bold text-center"
                             title={label}
                           >
-                            <span className="sm:hidden">{short}</span>
-                            <span className="hidden sm:inline">{label}</span>
+                            <span className="sm:hidden inline-flex h-5 min-w-[28px] items-center justify-center leading-none">
+                              {short}
+                            </span>
+
+                            <span className="hidden sm:block w-full truncate whitespace-nowrap overflow-hidden">
+                              {label}
+                            </span>
                           </div>
                         </div>
                       ) : (
@@ -540,7 +537,7 @@ export default function DashboardGrid(props: Props) {
           </Card>
         )}
 
-        {/* Day / Week */}
+        {/* Day/Week */}
         {view !== "month" && (
           <div className="grid gap-3">
             {props.halls
@@ -564,7 +561,10 @@ export default function DashboardGrid(props: Props) {
                   <CardContent className="grid gap-3">
                     {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map(
                       (d) => (
-                        <Card key={`${h.id}_${d}`} className="rounded-2xl">
+                        <Card
+                          key={`${h.id}_${d}`}
+                          className="rounded-2xl"
+                        >
                           <CardHeader className="pb-2">
                             <div className="flex items-center justify-between gap-2 min-w-0">
                               <div className="font-bold truncate min-w-0">
@@ -614,8 +614,7 @@ export default function DashboardGrid(props: Props) {
                                             o.created_by
                                           : "";
                                         const amt = occAmount(o);
-                                        const sym = currencySymbol(o.currency);
-                                        const { Icon, title } = statusMeta(st);
+                                        const cur = currencySymbol(o.currency);
 
                                         return (
                                           <div
@@ -623,89 +622,84 @@ export default function DashboardGrid(props: Props) {
                                             className={[
                                               "rounded-2xl border ring-1",
                                               "w-full max-w-full overflow-hidden",
-                                              "p-2 sm:p-3",
+                                              "p-3 sm:p-4", // ✅ أقل padding
                                               tone.bg,
                                               tone.border,
                                               tone.ring,
                                             ].join(" ")}
                                           >
-                                            {/* title + icons column */}
-                                            <div className="flex items-start justify-between gap-2 min-w-0">
-                                              <div className="min-w-0 w-full">
-                                                <div className="font-extrabold truncate">
+                                            {/* ✅ توزيع جديد: محتوى يمين + أيقونات يسار (مكدسة) */}
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="min-w-0 w-full space-y-1">
+                                                {/* السطر 1: العنوان */}
+                                                <div className="font-extrabold truncate text-[15px] sm:text-base">
                                                   {occTitle(o)}
                                                 </div>
 
-                                                {(o.client_name ||
-                                                  o.client_phone ||
-                                                  typeof amt === "number") && (
-                                                  <div className="text-xs text-muted-foreground mt-1 break-words">
-                                                    {o.client_name
-                                                      ? `العميل: ${o.client_name}`
-                                                      : "العميل: -"}
-                                                    {typeof amt === "number"
-                                                      ? ` - ${amt} ${sym}`
-                                                      : ""}
-                                                    {o.client_phone
-                                                      ? ` • ${o.client_phone}`
-                                                      : ""}
+                                                {/* السطر 2: العميل + المبلغ (بدون كلمة المبلغ) */}
+                                                <div className="text-xs text-muted-foreground break-words">
+                                                  {(o.client_name || o.client_phone) ? (
+                                                    <>
+                                                      {o.client_name ? `العميل: ${o.client_name}` : "العميل"}
+                                                      {typeof amt === "number"
+                                                        ? ` - ${amt} ${cur}`
+                                                        : ""}
+                                                      {o.client_phone ? ` • ${o.client_phone}` : ""}
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      {typeof amt === "number"
+                                                        ? `${amt} ${cur}`
+                                                        : ""}
+                                                    </>
+                                                  )}
+                                                </div>
+
+                                                {/* السطر 3: النوع + بواسطة */}
+                                                <div className="text-xs">
+                                                  <span className="font-semibold">
+                                                    {kindLabel(kind)}
+                                                  </span>
+                                                  {who ? (
+                                                    <span className="text-muted-foreground">
+                                                      {" "}
+                                                      • بواسطة:{" "}
+                                                      <span className="font-semibold text-foreground">
+                                                        {who}
+                                                      </span>
+                                                    </span>
+                                                  ) : null}
+                                                </div>
+
+                                                {o.notes ? (
+                                                  <div className="text-sm mt-2 whitespace-pre-wrap break-words">
+                                                    {o.notes}
                                                   </div>
-                                                )}
+                                                ) : null}
                                               </div>
 
-                                              {/* icons: edit then status below */}
+                                              {/* ✅ الأيقونات يسار: تعديل فوق + حالة تحت */}
                                               <div className="flex flex-col items-center gap-2 shrink-0">
                                                 <Button
                                                   asChild
                                                   size="icon"
                                                   variant="outline"
-                                                  className="h-9 w-9 rounded-xl"
-                                                  title="تعديل"
+                                                  className="rounded-xl h-11 w-11"
                                                 >
-                                                  <Link
-                                                    href={`/bookings/${o.booking_id}/edit`}
-                                                  >
-                                                    <Pencil className="h-5 w-5" />
-                                                    <span className="sr-only">
-                                                      تعديل
-                                                    </span>
+                                                  <Link href={`/bookings/${o.booking_id}/edit`} aria-label="تعديل">
+                                                    <PencilLine className="h-5 w-5" />
                                                   </Link>
                                                 </Button>
 
                                                 <div
-                                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border bg-white/70"
-                                                  title={title}
-                                                  aria-label={title}
+                                                  className="h-11 w-11 rounded-xl border bg-white/70 flex items-center justify-center"
+                                                  title={statusLabel(st)}
+                                                  aria-label={statusLabel(st)}
                                                 >
-                                                  <Icon className="h-5 w-5" />
+                                                  {statusIcon(st)}
                                                 </div>
                                               </div>
                                             </div>
-
-                                            {/* badges */}
-                                            <div className="flex flex-wrap gap-2 mt-3">
-                                              <Badge
-                                                variant="secondary"
-                                                className="rounded-full"
-                                              >
-                                                {kindLabel(kind)}
-                                              </Badge>
-
-                                              {who ? (
-                                                <Badge
-                                                  variant="secondary"
-                                                  className="rounded-full break-words"
-                                                >
-                                                  أضيف بواسطة: {who}
-                                                </Badge>
-                                              ) : null}
-                                            </div>
-
-                                            {o.notes ? (
-                                              <div className="text-sm mt-3 whitespace-pre-wrap break-words">
-                                                {o.notes}
-                                              </div>
-                                            ) : null}
                                           </div>
                                         );
                                       })}
