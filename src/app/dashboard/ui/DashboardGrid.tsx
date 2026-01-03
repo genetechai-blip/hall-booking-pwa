@@ -33,8 +33,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { PencilLine, Check, Clock3, X } from "lucide-react";
-
 const BAHRAIN_TZ = "Asia/Bahrain";
 type ViewMode = "day" | "week" | "month";
 
@@ -91,26 +89,6 @@ function statusLabel(st: BookingStatus) {
     case "cancelled":
       return "ملغي";
   }
-}
-
-function statusIcon(st: BookingStatus) {
-  switch (st) {
-    case "confirmed":
-      return <Check className="h-4 w-4" />;
-    case "hold":
-      return <Clock3 className="h-4 w-4" />;
-    case "cancelled":
-      return <X className="h-4 w-4" />;
-  }
-}
-
-function currencySymbol(cur?: string | null) {
-  // اللي طلبته: رمز/اختصار، مو كلمة "دينار"
-  // إذا عندك عملات ثانية لاحقاً نوسعها
-  if (!cur) return "د.ب";
-  const u = String(cur).toUpperCase();
-  if (u === "BHD") return "د.ب";
-  return cur;
 }
 
 function occDayISO(o: DashboardOccurrence) {
@@ -175,6 +153,100 @@ function dayToneByStatus(statuses: BookingStatus[]) {
       border: "border-zinc-200",
     };
   return { bg: "bg-background", ring: "ring-border", border: "border-border" };
+}
+
+/** Icons بدون أي مكتبات إضافية */
+function IconPencil({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M12 20h9"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconCheck({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none">
+      <path
+        d="M20 6 9 17l-5-5"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconClock({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none">
+      <path
+        d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10Z"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M12 6v6l4 2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconX({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none">
+      <path
+        d="M18 6 6 18M6 6l12 12"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function StatusMiniIcon({ st }: { st: BookingStatus }) {
+  // أيقونة صغيرة بجانب العنوان
+  const common =
+    "inline-flex items-center justify-center rounded-full border bg-white/70 text-muted-foreground";
+  if (st === "confirmed")
+    return (
+      <span className={`${common} h-5 w-5`} title="مؤكد" aria-label="مؤكد">
+        <IconCheck className="h-3.5 w-3.5 text-foreground" />
+      </span>
+    );
+  if (st === "hold")
+    return (
+      <span className={`${common} h-5 w-5`} title="مبدئي" aria-label="مبدئي">
+        <IconClock className="h-3.5 w-3.5" />
+      </span>
+    );
+  return (
+    <span className={`${common} h-5 w-5`} title="ملغي" aria-label="ملغي">
+      <IconX className="h-3.5 w-3.5" />
+    </span>
+  );
 }
 
 export default function DashboardGrid(props: Props) {
@@ -303,7 +375,7 @@ export default function DashboardGrid(props: Props) {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-3 pb-10 pt-4">
-      {/* Header */}
+      {/* Header (مرة وحدة فقط) */}
       <Card className="rounded-2xl shadow-sm">
         <CardHeader className="space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -338,12 +410,13 @@ export default function DashboardGrid(props: Props) {
                   </Button>
                 </DropdownMenuTrigger>
 
-                {/* ✅ مسافة من حافة الشاشة + منع الالتصاق */}
+                {/* ✅ مسافة عن حافة الشاشة */}
                 <DropdownMenuContent
                   align="end"
-                  sideOffset={8}
-                  collisionPadding={12}
-                  className="rounded-xl w-44 p-1"
+                  sideOffset={10}
+                  alignOffset={6}
+                  collisionPadding={14}
+                  className="rounded-xl p-2"
                 >
                   <DropdownMenuItem asChild>
                     <Link href="/bookings/new">إضافة حجز</Link>
@@ -443,7 +516,7 @@ export default function DashboardGrid(props: Props) {
         </CardHeader>
       </Card>
 
-      {/* Content */}
+      {/* محتوى */}
       <div className="mt-4">
         {/* Month */}
         {view === "month" && (
@@ -457,7 +530,7 @@ export default function DashboardGrid(props: Props) {
               </div>
             </CardHeader>
 
-            <CardContent>
+            <CardContent className="p-3 pt-0">
               <div className="grid grid-cols-7 gap-2">
                 {viewDays.map((d) => {
                   const isThisMonth =
@@ -469,12 +542,14 @@ export default function DashboardGrid(props: Props) {
                   const kinds = sum?.kinds || [];
                   const hasAny = statuses.length > 0;
 
+                  // أكثر نوع تكراراً
                   let label = "";
                   let short = "";
                   if (kinds.length > 0) {
                     const counts = new Map<BookingType, number>();
                     for (const k of kinds)
                       counts.set(k, (counts.get(k) || 0) + 1);
+
                     let best: BookingType = kinds[0];
                     let bestN = 0;
                     counts.forEach((n, k) => {
@@ -511,23 +586,28 @@ export default function DashboardGrid(props: Props) {
                       </div>
 
                       {hasAny ? (
-                        <div className="w-full px-1">
-                          {/* ✅ هنا الحل: لا Ellipsis على الموبايل */}
-                          <div
-                            className="mx-auto max-w-full rounded-full bg-white/70 border px-2 py-[2px] text-[11px] sm:text-[12px] font-bold text-center"
+                        <div className="w-full flex justify-center">
+                          {/* ✅ موبايل: دائرة صغيرة بحرف واحد (بدون ellipsis) */}
+                          <span
+                            className={[
+                              "inline-flex items-center justify-center",
+                              "rounded-full border bg-white/70",
+                              "leading-none font-extrabold",
+                              "h-5 w-5 sm:h-6 sm:w-auto sm:px-2",
+                              "text-[12px] sm:text-[12px]",
+                            ].join(" ")}
                             title={label}
                           >
-                            <span className="sm:hidden inline-flex h-5 min-w-[28px] items-center justify-center leading-none">
-                              {short}
-                            </span>
+                            <span className="sm:hidden">{short}</span>
 
-                            <span className="hidden sm:block w-full truncate whitespace-nowrap overflow-hidden">
+                            {/* ✅ شاشات أكبر: الكلمة كاملة (قد تُقص بالـ truncate فقط هنا) */}
+                            <span className="hidden sm:inline truncate max-w-[72px]">
                               {label}
                             </span>
-                          </div>
+                          </span>
                         </div>
                       ) : (
-                        <div className="h-[18px]" />
+                        <div className="h-[20px]" />
                       )}
                     </button>
                   );
@@ -558,13 +638,10 @@ export default function DashboardGrid(props: Props) {
                     )}
                   </CardHeader>
 
-                  <CardContent className="grid gap-3">
+                  <CardContent className="grid gap-3 p-3 pt-0">
                     {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map(
                       (d) => (
-                        <Card
-                          key={`${h.id}_${d}`}
-                          className="rounded-2xl"
-                        >
+                        <Card key={`${h.id}_${d}`} className="rounded-2xl">
                           <CardHeader className="pb-2">
                             <div className="flex items-center justify-between gap-2 min-w-0">
                               <div className="font-bold truncate min-w-0">
@@ -578,7 +655,7 @@ export default function DashboardGrid(props: Props) {
                             </div>
                           </CardHeader>
 
-                          <CardContent className="grid gap-3">
+                          <CardContent className="grid gap-3 p-3 pt-0">
                             {props.slots.map((s) => {
                               const key = `${d}__${h.id}__${s.id}`;
                               const list = occMap.get(key) || [];
@@ -597,7 +674,7 @@ export default function DashboardGrid(props: Props) {
                                     </div>
                                   </CardHeader>
 
-                                  <CardContent className="grid gap-2">
+                                  <CardContent className="grid gap-2 p-3 pt-0">
                                     {!has && (
                                       <div className="text-sm text-muted-foreground">
                                         لا توجد حجوزات في هذه الفترة.
@@ -614,7 +691,19 @@ export default function DashboardGrid(props: Props) {
                                             o.created_by
                                           : "";
                                         const amt = occAmount(o);
-                                        const cur = currencySymbol(o.currency);
+
+                                        // ✅ العميل + المبلغ بنفس السطر (بدون كلمة "المبلغ")
+                                        const clientLineParts: string[] = [];
+                                        if (o.client_name) clientLineParts.push(o.client_name);
+                                        else if (o.client_phone) clientLineParts.push(o.client_phone);
+
+                                        const clientLine =
+                                          clientLineParts.length > 0
+                                            ? `العميل: ${clientLineParts.join(" ")}`
+                                            : "";
+
+                                        const amountPart =
+                                          typeof amt === "number" ? ` - ${amt} د.ب` : "";
 
                                         return (
                                           <div
@@ -622,51 +711,47 @@ export default function DashboardGrid(props: Props) {
                                             className={[
                                               "rounded-2xl border ring-1",
                                               "w-full max-w-full overflow-hidden",
-                                              "p-3 sm:p-4", // ✅ أقل padding
+                                              "p-2.5", // ✅ أقل padding
                                               tone.bg,
                                               tone.border,
                                               tone.ring,
                                             ].join(" ")}
                                           >
-                                            {/* ✅ توزيع جديد: محتوى يمين + أيقونات يسار (مكدسة) */}
-                                            <div className="flex items-start justify-between gap-3">
-                                              <div className="min-w-0 w-full space-y-1">
-                                                {/* السطر 1: العنوان */}
-                                                <div className="font-extrabold truncate text-[15px] sm:text-base">
-                                                  {occTitle(o)}
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div className="min-w-0 flex-1">
+                                                {/* ✅ العنوان + أيقونة الحالة الصغيرة */}
+                                                <div className="flex items-start gap-2 min-w-0">
+                                                  <div className="font-extrabold text-[15px] leading-snug truncate min-w-0">
+                                                    {occTitle(o)}
+                                                  </div>
+                                                  <div className="shrink-0 mt-[2px]">
+                                                    <StatusMiniIcon st={st} />
+                                                  </div>
                                                 </div>
 
-                                                {/* السطر 2: العميل + المبلغ (بدون كلمة المبلغ) */}
-                                                <div className="text-xs text-muted-foreground break-words">
-                                                  {(o.client_name || o.client_phone) ? (
-                                                    <>
-                                                      {o.client_name ? `العميل: ${o.client_name}` : "العميل"}
-                                                      {typeof amt === "number"
-                                                        ? ` - ${amt} ${cur}`
-                                                        : ""}
-                                                      {o.client_phone ? ` • ${o.client_phone}` : ""}
-                                                    </>
-                                                  ) : (
-                                                    <>
-                                                      {typeof amt === "number"
-                                                        ? `${amt} ${cur}`
-                                                        : ""}
-                                                    </>
-                                                  )}
-                                                </div>
+                                                {/* ✅ سطر العميل + المبلغ */}
+                                                {(clientLine || amountPart) && (
+                                                  <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                                                    {clientLine}
+                                                    {amountPart}
+                                                  </div>
+                                                )}
 
-                                                {/* السطر 3: النوع + بواسطة */}
-                                                <div className="text-xs">
-                                                  <span className="font-semibold">
+                                                {/* ✅ سطر النوع + بواسطة */}
+                                                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                                                  <span className="inline-flex items-center rounded-full bg-white/60 border px-2 py-0.5 font-bold">
                                                     {kindLabel(kind)}
                                                   </span>
+
                                                   {who ? (
                                                     <span className="text-muted-foreground">
-                                                      {" "}
-                                                      • بواسطة:{" "}
-                                                      <span className="font-semibold text-foreground">
-                                                        {who}
-                                                      </span>
+                                                      بواسطة: {who}
+                                                    </span>
+                                                  ) : null}
+
+                                                  {o.client_phone && !o.client_name ? (
+                                                    <span className="text-muted-foreground">
+                                                      • {o.client_phone}
                                                     </span>
                                                   ) : null}
                                                 </div>
@@ -678,27 +763,20 @@ export default function DashboardGrid(props: Props) {
                                                 ) : null}
                                               </div>
 
-                                              {/* ✅ الأيقونات يسار: تعديل فوق + حالة تحت */}
-                                              <div className="flex flex-col items-center gap-2 shrink-0">
-                                                <Button
-                                                  asChild
-                                                  size="icon"
-                                                  variant="outline"
-                                                  className="rounded-xl h-11 w-11"
+                                              {/* ✅ زر تعديل صغير */}
+                                              <Button
+                                                asChild
+                                                size="icon"
+                                                variant="outline"
+                                                className="rounded-xl h-9 w-9 shrink-0"
+                                              >
+                                                <Link
+                                                  href={`/bookings/${o.booking_id}/edit`}
+                                                  aria-label="تعديل"
                                                 >
-                                                  <Link href={`/bookings/${o.booking_id}/edit`} aria-label="تعديل">
-                                                    <PencilLine className="h-5 w-5" />
-                                                  </Link>
-                                                </Button>
-
-                                                <div
-                                                  className="h-11 w-11 rounded-xl border bg-white/70 flex items-center justify-center"
-                                                  title={statusLabel(st)}
-                                                  aria-label={statusLabel(st)}
-                                                >
-                                                  {statusIcon(st)}
-                                                </div>
-                                              </div>
+                                                  <IconPencil className="h-4 w-4" />
+                                                </Link>
+                                              </Button>
                                             </div>
                                           </div>
                                         );
