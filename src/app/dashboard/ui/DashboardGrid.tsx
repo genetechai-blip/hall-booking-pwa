@@ -287,7 +287,7 @@ export default function DashboardGrid(props: Props) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <CardTitle className="text-2xl font-extrabold">
-                جدول الحجوزات
+                جدولي الحجوزات
               </CardTitle>
               <div className="text-sm text-muted-foreground mt-1">
                 مستخدم: <span className="font-bold">{myName}</span>
