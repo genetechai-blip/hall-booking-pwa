@@ -1,211 +1,141 @@
-// src/app/dashboard/page.tsx
-import Link from "next/link";
-import { redirect } from "next/navigation";
 import { DateTime } from "luxon";
-
 import DashboardGrid from "./ui/DashboardGrid";
 import { supabaseServer } from "@/lib/supabase/server";
-import { BAHRAIN_TZ } from "@/lib/time";
+import type { DashboardOccurrence, Hall, Slot } from "@/lib/types";
 
-type SearchParams = {
-  view?: "day" | "week" | "month";
-  date?: string;  // YYYY-MM-DD
-  start?: string; // YYYY-MM-DD (للأسبوعي)
-  hall?: string;
-};
+export const revalidate = 0;
 
-function IconButton({
-  href,
-  label,
-  children,
-}: {
-  href: string;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="btn"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "10px 12px",
-        borderRadius: 14,
-        whiteSpace: "nowrap",
-      }}
-      aria-label={label}
-      title={label}
-    >
-      {children}
-    </Link>
-  );
+const BAHRAIN_TZ = "Asia/Bahrain";
+
+function isoToday() {
+  return DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
 }
 
-function GearIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="2" />
-      <path
-        d="M19.4 15a7.9 7.9 0 0 0 .1-1l2-1.5-2-3.5-2.4.6a8.2 8.2 0 0 0-1.7-1L15 6h-6l-.4 2.6a8.2 8.2 0 0 0-1.7 1L4.5 9l-2 3.5 2 1.5a7.9 7.9 0 0 0 .1 1 7.9 7.9 0 0 0-.1 1l-2 1.5 2 3.5 2.4-.6c.5.4 1.1.7 1.7 1L9 22h6l.4-2.6c.6-.3 1.2-.6 1.7-1l2.4.6 2-3.5-2-1.5c.1-.3.1-.6.1-1Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+function addDaysISO(iso: string, n: number) {
+  return DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).plus({ days: n }).toISODate()!;
 }
 
-function PlusIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
+function startOfWeekSundayISO(iso: string) {
+  const ref = DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).startOf("day");
+  const weekday = ref.weekday; // 1=Mon .. 7=Sun
+  const daysSinceSunday = weekday % 7; // Sun->0
+  return ref.minus({ days: daysSinceSunday }).toISODate()!;
 }
 
-function LogoutIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M10 17l5-5-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M15 12H3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M21 3v18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
+function monthGridStartISO(anchorISO: string) {
+  const d = DateTime.fromISO(anchorISO, { zone: BAHRAIN_TZ }).startOf("month");
+  return startOfWeekSundayISO(d.toISODate()!);
+}
+
+function monthGridRange(anchorISO: string) {
+  const start = monthGridStartISO(anchorISO);
+  const endExclusive = addDaysISO(start, 42);
+  return { start, endExclusive };
+}
+
+function flattenOccurrence(row: any): DashboardOccurrence {
+  const b = row?.bookings ?? null;
+
+  const paymentAmount = typeof b?.payment_amount === "number" ? b.payment_amount : null;
+  const amount = typeof b?.amount === "number" ? b.amount : null;
+
+  return {
+    id: row.id,
+
+    hall_id: Number(row.hall_id),
+    slot_id: Number(row.slot_id),
+
+    start_ts: row.start_ts,
+    end_ts: row.end_ts,
+
+    booking_id: Number(row.booking_id),
+
+    booking_title: b?.title ?? null,
+    booking_status: b?.status ?? null,
+    booking_type: b?.booking_type ?? null,
+
+    // fallback (للتوافق)
+    title: b?.title ?? null,
+    status: b?.status ?? null,
+    kind: b?.booking_type ?? null,
+
+    client_name: b?.client_name ?? null,
+    client_phone: b?.client_phone ?? null,
+    notes: b?.notes ?? null,
+
+    created_by: b?.created_by ?? null,
+
+    payment_amount: paymentAmount,
+    amount,
+    currency: b?.currency ?? null,
+  };
 }
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams?: { date?: string };
 }) {
-  const sb = await supabaseServer();
+  const anchorDate =
+    searchParams?.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date)
+      ? searchParams.date
+      : isoToday();
 
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
+  const { start, endExclusive } = monthGridRange(anchorDate);
 
-  if (!user) redirect("/login");
+  const supabase = await supabaseServer();
 
-  // ✅ Default = شهري + تاريخ اليوم إذا ما فيه view/date
-  const today = DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
-  if (!searchParams.view) {
-    redirect(`/dashboard?view=month&date=${encodeURIComponent(searchParams.date ?? today)}`);
-  }
+  const { data: hallsRaw } = await supabase
+    .from("halls")
+    .select("id,name")
+    .order("id", { ascending: true });
 
-  const view = searchParams.view ?? "month";
-  const date = searchParams.date ?? today;
-  const start = searchParams.start ?? date;
+  const halls: Hall[] = (hallsRaw || []).map((h: any) => ({
+    id: Number(h.id),
+    name: h.name,
+  }));
 
-  // profile
-  const { data: myProfile } = await sb
-    .from("profiles")
-    .select("id, full_name, role, active")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { data: slotsRaw } = await supabase
+    .from("time_slots")
+    .select("id,code,name,start_time,end_time")
+    .order("id", { ascending: true });
 
-  // ✅ range ISO مضبوط
-  let rangeStart: DateTime;
-  let rangeEnd: DateTime;
-  let days: string[] = [];
+  const slots: Slot[] = (slotsRaw || []).map((s: any) => ({
+    id: Number(s.id),
+    code: (s.code ?? String(s.id)) as any,
+    name: s.name,
+    start_time: s.start_time,
+    end_time: s.end_time,
+  }));
 
-  if (view === "week") {
-    const s = DateTime.fromISO(start, { zone: BAHRAIN_TZ }).startOf("day");
-    rangeStart = s;
-    rangeEnd = s.plus({ days: 7 });
-    days = Array.from({ length: 7 }, (_, i) => s.plus({ days: i }).toISODate()!);
-  } else if (view === "month") {
-    const ref = DateTime.fromISO(date, { zone: BAHRAIN_TZ });
-    rangeStart = ref.startOf("month").startOf("day");
-    rangeEnd = ref.plus({ months: 1 }).startOf("month").startOf("day");
-    days = [date];
-  } else {
-    const d = DateTime.fromISO(date, { zone: BAHRAIN_TZ }).startOf("day");
-    rangeStart = d;
-    rangeEnd = d.plus({ days: 1 });
-    days = [d.toISODate()!];
-  }
+  const startTS = DateTime.fromISO(start, { zone: BAHRAIN_TZ })
+    .startOf("day")
+    .toISO()!;
+  const endTS = DateTime.fromISO(endExclusive, { zone: BAHRAIN_TZ })
+    .startOf("day")
+    .toISO()!;
 
-  const rangeStartISO = rangeStart.toISO()!;
-  const rangeEndISO = rangeEnd.toISO()!;
-
-  const [{ data: halls }, { data: slots }] = await Promise.all([
-    sb.from("halls").select("id,name").order("id"),
-    sb.from("time_slots").select("id,code,name,start_time,end_time").order("id"),
-  ]);
-
-  const { data: occurrences, error: occErr } = await sb
+  const { data: occRaw, error: occErr } = await supabase
     .from("booking_occurrences")
     .select(
-      `
-      id, hall_id, slot_id, start_ts, end_ts, booking_id, kind,
-      bookings:bookings (
-        id, title, status, client_name, client_phone, notes,
-        booking_type, amount, created_by,
-        profiles:profiles ( full_name )
-      )
-    `
+      "id,hall_id,slot_id,start_ts,end_ts,booking_id,bookings:bookings(id,title,status,booking_type,client_name,client_phone,notes,created_by,payment_amount,amount,currency)"
     )
-    .gte("start_ts", rangeStartISO)
-    .lt("start_ts", rangeEndISO)
+    .gte("start_ts", startTS)
+    .lt("start_ts", endTS)
     .order("start_ts", { ascending: true });
 
-  if (occErr) {
-    return (
-      <div className="container" style={{ paddingTop: 12 }}>
-        <div className="card" style={{ padding: 12, borderRadius: 18 }}>
-          <strong>صار خطأ في جلب الحجوزات</strong>
-          <div className="small muted" style={{ marginTop: 8 }}>{occErr.message}</div>
-          <div className="small muted" style={{ marginTop: 8 }}>
-            rangeStart: {rangeStartISO}<br />
-            rangeEnd: {rangeEndISO}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const occurrences: DashboardOccurrence[] = occErr
+    ? []
+    : (occRaw || []).map(flattenOccurrence);
 
   return (
-    <div className="container" style={{ paddingTop: 12 }}>
-      {/* App Bar */}
-      <div className="card" style={{ padding: 12, borderRadius: 18, display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ minWidth: 160 }}>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>جدول الحجوزات</div>
-            <div className="small muted" style={{ marginTop: 4 }}>
-              مستخدم: {myProfile?.full_name || "بدون اسم"}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <IconButton href="/bookings/new" label="إضافة حجز">
-              <PlusIcon />
-              <span>إضافة حجز</span>
-            </IconButton>
-
-            <IconButton href="/settings" label="الإعدادات">
-              <GearIcon />
-              <span>الإعدادات</span>
-            </IconButton>
-
-            <IconButton href="/api/auth/signout" label="خروج">
-              <LogoutIcon />
-              <span>خروج</span>
-            </IconButton>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 12 }}>
-        <DashboardGrid
-          halls={(halls ?? []) as any}
-          slots={(slots ?? []) as any}
-          days={days}
-          start={view === "week" ? start : date}
-          occurrences={(occurrences ?? []) as any}
-        />
-      </div>
-    </div>
+    <DashboardGrid
+      halls={halls}
+      slots={slots}
+      days={[]}
+      start={start}
+      anchorDate={anchorDate}
+      occurrences={occurrences}
+    />
   );
 }

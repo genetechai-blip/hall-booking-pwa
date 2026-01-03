@@ -1,215 +1,134 @@
-export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
 import { DateTime } from "luxon";
 import { supabaseServer } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
+
 const BAHRAIN_TZ = "Asia/Bahrain";
 
-type UpdatePayload = {
-  title: string;
-
-  // booking core
-  event_start_date: string; // YYYY-MM-DD
-  event_days: number; // 1..N
-  pre_days: number; // 0..N (التجهيز)
-  post_days: number; // 0..N (التنظيف)
-
-  // selection
-  hall_ids: number[];
-  slot_codes: string[]; // e.g. ["morning","afternoon","night"]
-
-  // metadata
-  booking_type?: string | null;
-  booking_status?: string | null;
-
-  client_name?: string | null;
-  client_phone?: string | null;
-  notes?: string | null;
-
-  payment_amount?: number | null;
-  currency?: string | null;
-};
-
-function toUtcIsoFromLocalDayTime(dayISO: string, timeHHMMSS: string) {
-  // dayISO/time is in Bahrain local time, convert to UTC ISO for DB
-  return DateTime.fromISO(`${dayISO}T${timeHHMMSS}`, {
-    zone: BAHRAIN_TZ,
-  }).toUTC().toISO()!;
+function parseTime(t: string) {
+  // "08:00:00" -> {h:8,m:0,s:0}
+  const [hh, mm, ss] = (t || "00:00:00").split(":").map((x) => Number(x));
+  return { hh: hh || 0, mm: mm || 0, ss: ss || 0 };
 }
 
-export async function POST(
-  req: Request,
-  ctx: { params: { id: string } }
-) {
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const bookingId = Number(params.id);
+  if (!bookingId) return NextResponse.json({ error: "Invalid booking id" }, { status: 400 });
+
   try {
-    const bookingId = Number(ctx.params.id);
-    if (!Number.isFinite(bookingId)) {
-      return NextResponse.json({ error: "invalid booking id" }, { status: 400 });
+    const body = await req.json();
+
+    const {
+      title,
+      client_name,
+      client_phone,
+      notes,
+      status,
+      booking_type,      // ✅ مهم
+      payment_amount,
+      currency,
+      event_start_date,
+      event_days,
+      pre_days,
+      post_days,
+      hall_ids,
+      slot_ids,
+    } = body || {};
+
+    if (!title || !Array.isArray(hall_ids) || hall_ids.length === 0 || !Array.isArray(slot_ids) || slot_ids.length === 0) {
+      return NextResponse.json({ error: "بيانات ناقصة." }, { status: 400 });
     }
 
-    const supabase = supabaseServer();
+    const supabase = await supabaseServer();
 
-    const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-
-    const body = (await req.json()) as Partial<UpdatePayload>;
-
-    // ---- Normalize + validate ----
-    const title = (body.title ?? "").trim();
-    const event_start_date = (body.event_start_date ?? "").trim();
-
-    const event_days = Number(body.event_days);
-    const pre_days = Number(body.pre_days ?? 0);
-    const post_days = Number(body.post_days ?? 0);
-
-    const hall_ids = Array.isArray(body.hall_ids)
-      ? body.hall_ids.map((x) => Number(x)).filter((n) => Number.isFinite(n))
-      : [];
-    const slot_codes = Array.isArray(body.slot_codes)
-      ? body.slot_codes.map((x) => String(x)).filter(Boolean)
-      : [];
-
-    const missing: string[] = [];
-    if (!title) missing.push("عنوان الحجز");
-    if (!event_start_date) missing.push("تاريخ البداية");
-    if (!Number.isFinite(event_days) || event_days <= 0) missing.push("عدد الأيام");
-    if (!Number.isFinite(pre_days) || pre_days < 0) missing.push("التجهيز");
-    if (!Number.isFinite(post_days) || post_days < 0) missing.push("التنظيف");
-    if (hall_ids.length === 0) missing.push("الصالات");
-    if (slot_codes.length === 0) missing.push("الفترات");
-
-    if (missing.length > 0) {
-      return NextResponse.json({ error: "missing_fields", missing }, { status: 400 });
-    }
-
-    // keep created_by stable for occurrences
-    const { data: oldBooking, error: oldErr } = await supabase
-      .from("bookings")
-      .select("id,created_by")
-      .eq("id", bookingId)
-      .maybeSingle();
-
-    if (oldErr || !oldBooking) {
-      return NextResponse.json(
-        { error: "booking not found" },
-        { status: 404 }
-      );
-    }
-
-    // ---- Update booking ----
-    const { error: updErr } = await supabase
+    // 1) Update booking (لا نستخدم kind نهائيًا)
+    const { error: upErr } = await supabase
       .from("bookings")
       .update({
         title,
+        client_name,
+        client_phone,
+        notes,
+        status,
+        booking_type,                 // ✅
+        payment_amount,
+        currency,
         event_start_date,
         event_days,
         pre_days,
         post_days,
-        hall_ids,
-        event_slot_codes: slot_codes,
-
-        booking_type: body.booking_type ?? null,
-        booking_status: body.booking_status ?? null,
-
-        client_name: body.client_name ?? null,
-        client_phone: body.client_phone ?? null,
-        notes: body.notes ?? null,
-
-        payment_amount: typeof body.payment_amount === "number" ? body.payment_amount : null,
-        currency: body.currency ?? null,
-
         updated_at: new Date().toISOString(),
       })
       .eq("id", bookingId);
 
-    if (updErr) {
-      return NextResponse.json({ error: updErr.message }, { status: 400 });
-    }
+    if (upErr) throw new Error(upErr.message);
 
-    // ---- Fetch slots by code ----
-    const { data: slots, error: slotsErr } = await supabase
-      .from("time_slots")
-      .select("id,code,start_time,end_time")
-      .in("code", slot_codes);
+    // 2) Rebuild booking_occurrences
+    // delete old
+    const { error: delErr } = await supabase.from("booking_occurrences").delete().eq("booking_id", bookingId);
+    if (delErr) throw new Error(delErr.message);
 
-    if (slotsErr || !slots || slots.length === 0) {
-      return NextResponse.json(
-        { error: "time_slots not found" },
-        { status: 400 }
-      );
-    }
+    // load all slots (عشان أيام التجهيز/التنظيف نحجز كل الفترات)
+    const { data: allSlots, error: slotsErr } = await supabase.from("time_slots").select("id, start_time, end_time");
+    if (slotsErr) throw new Error(slotsErr.message);
 
-    // ---- Replace occurrences ----
-    const { error: delErr } = await supabase
-      .from("booking_occurrences")
-      .delete()
-      .eq("booking_id", bookingId);
+    const allSlotIds = (allSlots || []).map((s: any) => Number(s.id));
+    const slotById = new Map<number, any>((allSlots || []).map((s: any) => [Number(s.id), s]));
 
-    if (delErr) {
-      return NextResponse.json({ error: delErr.message }, { status: 400 });
-    }
+    const evStart = DateTime.fromISO(event_start_date, { zone: BAHRAIN_TZ }).startOf("day");
+    const pre = Number(pre_days || 0);
+    const evDays = Math.max(1, Number(event_days || 1));
+    const post = Number(post_days || 0);
 
-    const totalDays = pre_days + event_days + post_days;
-    const occurrences: any[] = [];
+    const rangeStart = evStart.minus({ days: pre });
+    const totalDays = pre + evDays + post;
+
+    const rows: any[] = [];
 
     for (let d = 0; d < totalDays; d++) {
-      const dayISO = DateTime.fromISO(event_start_date, { zone: BAHRAIN_TZ })
-        .plus({ days: d - pre_days })
-        .toISODate()!;
+      const day = rangeStart.plus({ days: d });
+      const isEvent = day >= evStart && day < evStart.plus({ days: evDays });
 
-      for (const hallId of hall_ids) {
-        for (const sc of slot_codes) {
-          const slot = slots.find((x) => x.code === sc);
-          if (!slot) continue;
+      const useSlotIds: number[] = isEvent ? slot_ids.map(Number) : allSlotIds;
 
-          const startISO = toUtcIsoFromLocalDayTime(dayISO, slot.start_time);
-          let endISO = toUtcIsoFromLocalDayTime(dayISO, slot.end_time);
+      for (const hallIdRaw of hall_ids) {
+        const hallId = Number(hallIdRaw);
 
-          // if end <= start, it spills to next day
-          const sDT = DateTime.fromISO(startISO);
-          const eDT = DateTime.fromISO(endISO);
-          if (eDT <= sDT) endISO = eDT.plus({ days: 1 }).toISO()!;
+        for (const slotIdRaw of useSlotIds) {
+          const slotId = Number(slotIdRaw);
+          const s = slotById.get(slotId);
+          if (!s) continue;
 
-          occurrences.push({
+          const st = parseTime(s.start_time);
+          const et = parseTime(s.end_time);
+
+          let startTs = day.set({ hour: st.hh, minute: st.mm, second: st.ss });
+          let endTs = day.set({ hour: et.hh, minute: et.mm, second: et.ss });
+
+          // لو end قبل start (مثلاً فترة تمتد بعد منتصف الليل)
+          if (endTs <= startTs) endTs = endTs.plus({ days: 1 });
+
+          rows.push({
             booking_id: bookingId,
             hall_id: hallId,
-            slot_id: slot.id,
-            start_ts: startISO,
-            end_ts: endISO,
-
-            title,
-            kind: body.booking_type ?? null,
-            status: body.booking_status ?? null,
-
-            created_by: oldBooking.created_by ?? null,
+            slot_id: slotId,
+            start_ts: startTs.toISO(),
+            end_ts: endTs.toISO(),
+            // اختياري: نسخ النوع داخل occurrence لو عندك عمود kind (إذا ما عندك اتركها)
+            // kind: booking_type,
           });
         }
       }
     }
 
-    if (occurrences.length === 0) {
-      return NextResponse.json(
-        { error: "no occurrences built" },
-        { status: 400 }
-      );
-    }
-
-    const { error: insErr } = await supabase
-      .from("booking_occurrences")
-      .insert(occurrences);
-
-    if (insErr) {
-      return NextResponse.json({ error: insErr.message }, { status: 400 });
+    if (rows.length > 0) {
+      const { error: insErr } = await supabase.from("booking_occurrences").insert(rows);
+      if (insErr) throw new Error(insErr.message);
     }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Update failed" }, { status: 500 });
   }
 }
