@@ -4,189 +4,179 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { DateTime } from "luxon";
-import { supabaseBrowser } from "@/lib/supabase/client";
+
 import type { Hall, Slot, BookingType, BookingStatus } from "@/lib/types";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const BAHRAIN_TZ = "Asia/Bahrain";
 
-function isoToday() {
-  return DateTime.now().setZone(BAHRAIN_TZ).toISODate()!;
-}
-function occDayISO(start_ts: string) {
-  return DateTime.fromISO(start_ts).setZone(BAHRAIN_TZ).toISODate()!;
+function kindLabel(kind: BookingType) {
+  switch (kind) {
+    case "death":
+      return "وفاة";
+    case "mawlid":
+      return "مولد";
+    case "fatiha":
+      return "فاتحة";
+    case "wedding":
+      return "زواج";
+    default:
+      return "خاصة";
+  }
 }
 
-const TYPE_LABEL: Record<BookingType, string> = {
-  death: "وفاة",
-  mawlid: "مولد",
-  fatiha: "فاتحة",
-  wedding: "زواج",
-  special: "مناسبة خاصة",
-};
+function statusLabel(st: BookingStatus) {
+  switch (st) {
+    case "confirmed":
+      return "مؤكد";
+    case "hold":
+      return "مبدئي";
+    case "cancelled":
+      return "ملغي";
+  }
+}
 
 export default function EditBookingPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
   const router = useRouter();
-  const supabase = useMemo(() => supabaseBrowser(), []);
-
-  const bookingId = Number((params as any)?.id);
-
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [halls, setHalls] = useState<Hall[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
 
-  // booking fields
-  const [title, setTitle] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
-  const [notes, setNotes] = useState("");
-
-  const [status, setStatus] = useState<BookingStatus>("confirmed");
-  const [bookingType, setBookingType] = useState<BookingType>("special");
-
-  const [paymentAmount, setPaymentAmount] = useState<string>("");
-  const [currency, setCurrency] = useState("BHD");
-
-  const [eventStartDate, setEventStartDate] = useState<string>(isoToday());
+  const [eventStartDate, setEventStartDate] = useState<string>("");
   const [eventDays, setEventDays] = useState<number>(1);
   const [preDays, setPreDays] = useState<number>(0);
   const [postDays, setPostDays] = useState<number>(0);
 
-  const [selectedHallIds, setSelectedHallIds] = useState<number[]>([]);
-  const [selectedSlotIds, setSelectedSlotIds] = useState<number[]>([]);
+  const [hallIds, setHallIds] = useState<number[]>([]);
+  const [slotIds, setSlotIds] = useState<number[]>([]);
 
-  const dayOptions = useMemo(() => Array.from({ length: 30 }, (_, i) => i + 1), []);
-  const bufferOptions = useMemo(() => Array.from({ length: 11 }, (_, i) => i), []);
+  const [title, setTitle] = useState<string>("");
+  const [bookingType, setBookingType] = useState<BookingType>("death");
+  const [bookingStatus, setBookingStatus] = useState<BookingStatus>("confirmed");
+  const [clientName, setClientName] = useState<string>("");
+  const [clientPhone, setClientPhone] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [currency, setCurrency] = useState<string>("د.ب");
 
-  function toggleHall(id: number) {
-    setSelectedHallIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-  function toggleSlotId(id: number) {
-    setSelectedSlotIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>("");
+
+  const slotNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    slots.forEach((s) => m.set(s.id, s.name));
+    return m;
+  }, [slots]);
 
   useEffect(() => {
-    if (!bookingId) return;
-
     (async () => {
-      setLoading(true);
-      setError(null);
-
       try {
-        // meta
-        const [hRes, sRes] = await Promise.all([fetch("/api/meta/halls"), fetch("/api/meta/slots")]);
-        if (!hRes.ok || !sRes.ok) throw new Error("META_FETCH_FAILED");
-        const hallsJson = await hRes.json();
-        const slotsJson = await sRes.json();
-        setHalls(hallsJson);
-        setSlots(slotsJson);
+        setLoading(true);
 
-        // booking (IMPORTANT: لا نستخدم kind نهائيًا)
-        const { data: b, error: bErr } = await supabase
-          .from("bookings")
-          .select("*")
-          .eq("id", bookingId)
-          .maybeSingle();
+        const [hRes, sRes, bRes] = await Promise.all([
+          fetch("/api/meta/halls"),
+          fetch("/api/meta/slots"),
+          fetch(`/api/bookings/${id}/get`),
+        ]);
 
-        if (bErr) throw new Error(bErr.message);
-        if (!b) throw new Error("Booking not found");
+        const hallsData = await hRes.json();
+        const slotsData = await sRes.json();
+        const bookingData = await bRes.json();
 
-        // occurrences -> لاستخراج الصالات والفترات المختارة
-        const { data: occ, error: oErr } = await supabase
-          .from("booking_occurrences")
-          .select("hall_id, slot_id, start_ts")
-          .eq("booking_id", bookingId);
+        if (!bRes.ok) throw new Error(bookingData?.error || "فشل تحميل الحجز.");
 
-        if (oErr) throw new Error(oErr.message);
+        setHalls(hallsData || []);
+        setSlots(slotsData || []);
 
-        // تعبئة الحقول
-        setTitle((b.title || "").toString());
-        setClientName((b.client_name || "").toString());
-        setClientPhone((b.client_phone || "").toString());
-        setNotes((b.notes || "").toString());
+        // payload من api/bookings/[id]/get
+        setEventStartDate(bookingData.event_start_date || "");
+        setEventDays(Number(bookingData.event_days || 1));
+        setPreDays(Number(bookingData.pre_days || 0));
+        setPostDays(Number(bookingData.post_days || 0));
 
-        setStatus((b.status as BookingStatus) || "confirmed");
+        setHallIds((bookingData.hall_ids || []).map((x: any) => Number(x)));
+        setSlotIds((bookingData.slot_ids || []).map((x: any) => Number(x)));
 
-        // ✅ هنا أصل المشكلة: لازم booking_type مو kind
-        setBookingType(((b.booking_type as BookingType) || "special") as BookingType);
+        setTitle(bookingData.title || "");
+        setBookingType((bookingData.booking_type || "death") as BookingType);
+        setBookingStatus((bookingData.booking_status || "hold") as BookingStatus);
 
-        // مبلغ اختياري (في DB اسمها payment_amount غالبًا)
-        const amt =
-          typeof b.payment_amount === "number"
-            ? b.payment_amount
-            : typeof b.amount === "number"
-            ? b.amount
-            : null;
-        setPaymentAmount(amt === null ? "" : String(amt));
-        setCurrency((b.currency || "BHD").toString());
+        setClientName(bookingData.client_name || "");
+        setClientPhone(bookingData.client_phone || "");
+        setNotes(bookingData.notes || "");
 
-        // تواريخ/أيام
-        const start =
-          (b.event_start_date as string) ||
-          (b.start_date as string) ||
-          (occ && occ.length ? occDayISO(occ[0].start_ts) : isoToday());
-        setEventStartDate(start);
-
-        setEventDays(Number(b.event_days ?? b.days ?? 1));
-        setPreDays(Number(b.pre_days ?? 0));
-        setPostDays(Number(b.post_days ?? 0));
-
-        // ✅ الصالات: من كل occurrences (عادة نفس الصالات)
-        const hallIds = Array.from(new Set((occ || []).map((x: any) => Number(x.hall_id)).filter(Boolean)));
-        setSelectedHallIds(hallIds);
-
-        // ✅ الفترات: خذها من يوم الفعالية فقط عشان ما يختلط مع أيام التجهيز/التنظيف
-        const onEventDay = (occ || []).filter((x: any) => occDayISO(x.start_ts) === start);
-        const slotIds = Array.from(
-          new Set((onEventDay.length ? onEventDay : occ || []).map((x: any) => Number(x.slot_id)).filter(Boolean))
+        setPaymentAmount(
+          typeof bookingData.payment_amount === "number"
+            ? String(bookingData.payment_amount)
+            : bookingData.payment_amount
+            ? String(bookingData.payment_amount)
+            : ""
         );
-        setSelectedSlotIds(slotIds);
+        setCurrency(bookingData.currency || "د.ب");
       } catch (e: any) {
-        setError(e?.message || "صار خطأ في تحميل بيانات الحجز.");
+        setError(e?.message || "فشل تحميل البيانات.");
       } finally {
         setLoading(false);
       }
     })();
-  }, [bookingId, supabase]);
+  }, [id]);
 
-  async function submit() {
-    setError(null);
+  function toggleHall(hid: number) {
+    setHallIds((prev) => (prev.includes(hid) ? prev.filter((x) => x !== hid) : [...prev, hid]));
+  }
+  function toggleSlot(sid: number) {
+    setSlotIds((prev) => (prev.includes(sid) ? prev.filter((x) => x !== sid) : [...prev, sid]));
+  }
 
-    if (!title.trim()) return setError("اكتب عنوان الحجز.");
-    if (selectedHallIds.length === 0) return setError("اختر صالة واحدة على الأقل.");
-    if (selectedSlotIds.length === 0) return setError("اختر فترة واحدة على الأقل.");
+  async function save() {
+    setError("");
+
+    if (!eventStartDate) return setError("اختر تاريخ البداية.");
+    if (eventDays < 1) return setError("عدد الأيام لازم يكون 1 أو أكثر.");
+    if (hallIds.length === 0) return setError("اختر صالة واحدة على الأقل.");
+    if (slotIds.length === 0) return setError("اختر فترة واحدة على الأقل.");
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/bookings/${bookingId}/update`, {
+      const res = await fetch(`/api/bookings/${id}/update`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title.trim(),
-          client_name: clientName.trim() || null,
-          client_phone: clientPhone.trim() || null,
-          notes: notes.trim() || null,
-
-          status,               // confirmed/hold/cancelled
-          booking_type: bookingType, // ✅ مهم: booking_type
-
-          payment_amount: paymentAmount.trim() === "" ? null : Number(paymentAmount),
+          title,
+          booking_type: bookingType,
+          booking_status: bookingStatus,
+          client_name: clientName,
+          client_phone: clientPhone,
+          notes,
+          payment_amount: paymentAmount ? Number(paymentAmount) : null,
           currency,
 
           event_start_date: eventStartDate,
-          event_days: eventDays,
-          pre_days: preDays,
-          post_days: postDays,
+          event_days: Number(eventDays),
+          pre_days: Number(preDays),
+          post_days: Number(postDays),
 
-          hall_ids: selectedHallIds,
-          slot_ids: selectedSlotIds,
+          hall_ids: hallIds,
+          slot_ids: slotIds,
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "فشل التعديل.");
 
       router.push(`/dashboard?date=${eventStartDate}`);
@@ -198,170 +188,262 @@ export default function EditBookingPage() {
   }
 
   return (
-    <div className="container">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h2 style={{ margin: 0 }}>تعديل حجز</h2>
-        <Link className="btn" href="/dashboard">
-          رجوع
-        </Link>
-      </div>
-
-      <div className="card" style={{ marginTop: 12 }}>
-        {loading ? (
-          <div className="muted">جاري التحميل…</div>
-        ) : (
-          <div className="grid" style={{ gap: 12 }}>
-            <div className="grid cols2">
-              <div>
-                <label className="label">عنوان الحجز</label>
-                <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
-              </div>
-
-              <div>
-                <label className="label">نوع المناسبة</label>
-                <select className="select" value={bookingType} onChange={(e) => setBookingType(e.target.value as any)}>
-                  {Object.keys(TYPE_LABEL).map((k) => (
-                    <option key={k} value={k}>
-                      {TYPE_LABEL[k as BookingType]}
-                    </option>
-                  ))}
-                </select>
+    <div className="mx-auto w-full max-w-3xl px-3 pb-10 pt-4" dir="rtl">
+      <Card className="rounded-2xl shadow-sm">
+        <CardHeader className="space-y-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <CardTitle className="text-2xl font-extrabold">تعديل حجز</CardTitle>
+              <div className="text-sm text-muted-foreground mt-1">
+                عدّل البيانات ثم احفظ.
               </div>
             </div>
 
-            <div className="grid cols3">
-              <div>
-                <label className="label">الحالة</label>
-                <select className="select" value={status} onChange={(e) => setStatus(e.target.value as any)}>
-                  <option value="confirmed">مؤكد</option>
-                  <option value="hold">مبدئي</option>
-                  <option value="cancelled">ملغي</option>
-                </select>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" className="rounded-xl">
+                <Link href="/dashboard">رجوع</Link>
+              </Button>
+            </div>
+          </div>
+          <Separator />
+        </CardHeader>
+
+        <CardContent className="grid gap-4">
+          {loading ? (
+            <div className="text-sm text-muted-foreground">جاري التحميل…</div>
+          ) : (
+            <>
+              {error ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {error}
+                </div>
+              ) : null}
+
+              {/* التواريخ */}
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div className="sm:col-span-2">
+                  <div className="text-sm font-semibold mb-1">تاريخ البداية</div>
+                  <Input
+                    dir="ltr"
+                    type="date"
+                    value={eventStartDate}
+                    onChange={(e) => setEventStartDate(e.target.value)}
+                    className="rounded-xl text-center"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold mb-1">عدد الأيام</div>
+                  <Input
+                    dir="ltr"
+                    type="number"
+                    min={1}
+                    value={eventDays}
+                    onChange={(e) => setEventDays(Number(e.target.value || 1))}
+                    className="rounded-xl text-center"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-sm font-semibold mb-1">قبل</div>
+                    <Input
+                      dir="ltr"
+                      type="number"
+                      min={0}
+                      value={preDays}
+                      onChange={(e) => setPreDays(Number(e.target.value || 0))}
+                      className="rounded-xl text-center"
+                    />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold mb-1">بعد</div>
+                    <Input
+                      dir="ltr"
+                      type="number"
+                      min={0}
+                      value={postDays}
+                      onChange={(e) => setPostDays(Number(e.target.value || 0))}
+                      className="rounded-xl text-center"
+                    />
+                  </div>
+                </div>
               </div>
 
+              {/* الصالات */}
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">الصالـات</div>
+                  <Badge variant="secondary" className="rounded-full">
+                    {hallIds.length} محددة
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {halls.map((h) => {
+                    const active = hallIds.includes(h.id);
+                    return (
+                      <Button
+                        key={h.id}
+                        type="button"
+                        variant={active ? "default" : "outline"}
+                        className="rounded-xl"
+                        onClick={() => toggleHall(h.id)}
+                      >
+                        {h.name}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* الفترات */}
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">الفترات</div>
+                  <Badge variant="secondary" className="rounded-full">
+                    {slotIds.length} محددة
+                  </Badge>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {slots.map((s) => {
+                    const active = slotIds.includes(s.id);
+                    return (
+                      <Button
+                        key={s.id}
+                        type="button"
+                        variant={active ? "secondary" : "outline"}
+                        className="rounded-xl"
+                        onClick={() => toggleSlot(s.id)}
+                      >
+                        {s.name}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                {slotIds.length ? (
+                  <div className="text-xs text-muted-foreground">
+                    محدد: {slotIds.map((sid) => slotNameById.get(sid) || sid).join("، ")}
+                  </div>
+                ) : null}
+              </div>
+
+              {/* نوع/حالة */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-sm font-semibold mb-1">نوع الحجز</div>
+                  <Select value={bookingType} onValueChange={(v) => setBookingType(v as BookingType)}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="اختر" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {(["death", "mawlid", "fatiha", "wedding", "special"] as BookingType[]).map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {kindLabel(k)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold mb-1">حالة الحجز</div>
+                  <Select value={bookingStatus} onValueChange={(v) => setBookingStatus(v as BookingStatus)}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="اختر" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {(["confirmed", "hold", "cancelled"] as BookingStatus[]).map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {statusLabel(s)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* العنوان والعميل */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <div className="text-sm font-semibold mb-1">عنوان الحجز</div>
+                  <Input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="rounded-xl"
+                    placeholder="مثال: وفاة السيد..."
+                  />
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold mb-1">اسم العميل</div>
+                  <Input
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    className="rounded-xl"
+                    placeholder="المأتم / اسم الشخص"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold mb-1">هاتف العميل</div>
+                  <Input
+                    dir="ltr"
+                    value={clientPhone}
+                    onChange={(e) => setClientPhone(e.target.value)}
+                    className="rounded-xl"
+                    placeholder="3XXXXXXXX"
+                  />
+                </div>
+              </div>
+
+              {/* مبلغ + عملة */}
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="sm:col-span-2">
+                  <div className="text-sm font-semibold mb-1">المبلغ</div>
+                  <Input
+                    dir="ltr"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    className="rounded-xl"
+                    placeholder="مثال: 50"
+                  />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold mb-1">العملة</div>
+                  <Input value={currency} onChange={(e) => setCurrency(e.target.value)} className="rounded-xl" />
+                </div>
+              </div>
+
+              {/* ملاحظات */}
               <div>
-                <label className="label">المبلغ (اختياري)</label>
-                <input
-                  className="input"
-                  inputMode="decimal"
-                  placeholder="مثال: 50"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
+                <div className="text-sm font-semibold mb-1">ملاحظات</div>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                  rows={4}
+                  placeholder="أي تفاصيل إضافية…"
                 />
               </div>
 
-              <div>
-                <label className="label">العملة</label>
-                <input className="input" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />
-              </div>
-            </div>
-
-            <div className="grid cols2">
-              <div>
-                <label className="label">اسم العميل (اختياري)</label>
-                <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} />
-              </div>
-              <div>
-                <label className="label">رقم العميل (اختياري)</label>
-                <input className="input" inputMode="tel" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} />
-              </div>
-            </div>
-
-            <div>
-              <label className="label">ملاحظات</label>
-              <textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
-            </div>
-
-            <div className="grid cols2">
-              <div>
-                <label className="label">تاريخ البداية</label>
-                <input className="input" type="date" value={eventStartDate} onChange={(e) => setEventStartDate(e.target.value)} />
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button type="button" className="rounded-xl" onClick={save} disabled={saving}>
+                  {saving ? "جاري الحفظ…" : "حفظ التعديل"}
+                </Button>
               </div>
 
-              <div className="grid cols3">
-                <div>
-                  <label className="label">عدد الأيام</label>
-                  <select className="select" value={eventDays} onChange={(e) => setEventDays(Number(e.target.value))}>
-                    {dayOptions.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
+              {/* معلومة لطيفة */}
+              {eventStartDate ? (
+                <div className="text-xs text-muted-foreground">
+                  {DateTime.fromISO(eventStartDate, { zone: BAHRAIN_TZ }).toFormat("dd LLL yyyy")}
                 </div>
-
-                <div>
-                  <label className="label">تجهيز قبل</label>
-                  <select className="select" value={preDays} onChange={(e) => setPreDays(Number(e.target.value))}>
-                    {bufferOptions.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label">تنظيف بعد</label>
-                  <select className="select" value={postDays} onChange={(e) => setPostDays(Number(e.target.value))}>
-                    {bufferOptions.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid cols2">
-              <div>
-                <label className="label">الصالات</label>
-                <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-                  {halls.map((h) => (
-                    <button
-                      key={h.id}
-                      type="button"
-                      className={`btn ${selectedHallIds.includes(h.id) ? "primary" : ""}`}
-                      onClick={() => toggleHall(h.id)}
-                    >
-                      {h.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="label">الفترات</label>
-                <div className="row" style={{ flexWrap: "wrap" }}>
-                  {slots.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      className={`btn ${selectedSlotIds.includes(s.id) ? "primary" : ""}`}
-                      onClick={() => toggleSlotId(s.id)}
-                    >
-                      {s.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {error ? (
-              <div className="badge" style={{ borderColor: "rgba(176,0,32,.35)", background: "rgba(176,0,32,.08)" }}>
-                {error}
-              </div>
-            ) : null}
-
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <button className="btn primary" disabled={saving} onClick={submit}>
-                {saving ? "جاري الحفظ…" : "حفظ التعديل"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+              ) : null}
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
