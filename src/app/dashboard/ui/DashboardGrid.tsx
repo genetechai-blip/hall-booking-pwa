@@ -33,7 +33,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-// ✅ Icons (shadcn-friendly)
 import { Pencil, CheckCircle2, Clock3, XCircle } from "lucide-react";
 
 const BAHRAIN_TZ = "Asia/Bahrain";
@@ -95,10 +94,16 @@ function statusLabel(st: BookingStatus) {
 }
 
 function statusIcon(st: BookingStatus) {
-  // ✅ أيقونة فقط + title
-  if (st === "confirmed") return { Icon: CheckCircle2, title: "مؤكد" };
-  if (st === "hold") return { Icon: Clock3, title: "مبدئي" };
-  return { Icon: XCircle, title: "ملغي" };
+  switch (st) {
+    case "confirmed":
+      return { Icon: CheckCircle2, title: "مؤكد" };
+    case "hold":
+      return { Icon: Clock3, title: "مبدئي" };
+    case "cancelled":
+      return { Icon: XCircle, title: "ملغي" };
+    default:
+      return { Icon: Clock3, title: "مبدئي" };
+  }
 }
 
 function occDayISO(o: DashboardOccurrence) {
@@ -147,7 +152,6 @@ function occAmount(o: DashboardOccurrence): number | null {
 }
 
 function dayToneByStatus(statuses: BookingStatus[]) {
-  // ألوان هادية (iOS-ish)
   if (statuses.includes("confirmed"))
     return { bg: "bg-red-50", ring: "ring-red-200", border: "border-red-200" };
   if (statuses.includes("hold"))
@@ -291,7 +295,7 @@ export default function DashboardGrid(props: Props) {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-3 pb-10 pt-4">
-      {/* Header (مرة وحدة فقط) */}
+      {/* Header */}
       <Card className="rounded-2xl shadow-sm">
         <CardHeader className="space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -362,7 +366,6 @@ export default function DashboardGrid(props: Props) {
                 <div className="text-sm font-semibold mb-1 text-right">
                   اختر تاريخ
                 </div>
-
                 <div className="w-full max-w-full overflow-hidden">
                   <Input
                     dir="ltr"
@@ -424,7 +427,7 @@ export default function DashboardGrid(props: Props) {
         </CardHeader>
       </Card>
 
-      {/* محتوى */}
+      {/* Content */}
       <div className="mt-4">
         {/* Month */}
         {view === "month" && (
@@ -492,25 +495,24 @@ export default function DashboardGrid(props: Props) {
 
                       {hasAny ? (
                         <div className="w-full px-1">
-                          {/* ✅ هنا الإصلاح: الموبايل بدون ellipsis نهائيًا + توسيط مضبوط */}
                           <div
-                            className="mx-auto max-w-full rounded-full bg-white/70 border px-2
-                                       h-6 sm:h-auto
-                                       flex items-center justify-center
-                                       text-[12px] sm:text-[12px] font-extrabold leading-none
-                                       text-center"
+                            className={[
+                              "mx-auto max-w-full rounded-full bg-white/70 border",
+                              "h-6 sm:h-auto", // ✅ ارتفاع ثابت للموبايل لتوسيط الحرف
+                              "flex items-center justify-center",
+                              "px-2 py-[2px] text-[12px] sm:text-[12px] font-extrabold",
+                              "text-center",
+                              // ✅ الإليبس فقط للشاشات الكبيرة (الكلمة كاملة) لو احتجنا
+                              "sm:whitespace-nowrap sm:overflow-hidden sm:text-ellipsis",
+                            ].join(" ")}
                             title={label}
                           >
-                            <span className="sm:hidden">{short}</span>
-
-                            {/* ✅ الديسكتوب/تابلت: كلمة كاملة مع truncate فقط هنا */}
-                            <span className="hidden sm:inline truncate max-w-[88px]">
-                              {label}
-                            </span>
+                            <span className="sm:hidden leading-none">{short}</span>
+                            <span className="hidden sm:inline">{label}</span>
                           </div>
                         </div>
                       ) : (
-                        <div className="h-[24px]" />
+                        <div className="h-[18px]" />
                       )}
                     </button>
                   );
@@ -541,7 +543,8 @@ export default function DashboardGrid(props: Props) {
                     )}
                   </CardHeader>
 
-                  <CardContent className="grid gap-3">
+                  {/* ✅ تقليل padding */}
+                  <CardContent className="grid gap-3 p-3 pt-3">
                     {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map(
                       (d) => (
                         <Card key={`${h.id}_${d}`} className="rounded-2xl">
@@ -558,7 +561,8 @@ export default function DashboardGrid(props: Props) {
                             </div>
                           </CardHeader>
 
-                          <CardContent className="grid gap-3">
+                          {/* ✅ تقليل padding */}
+                          <CardContent className="grid gap-3 p-3 pt-3">
                             {props.slots.map((s) => {
                               const key = `${d}__${h.id}__${s.id}`;
                               const list = occMap.get(key) || [];
@@ -577,7 +581,8 @@ export default function DashboardGrid(props: Props) {
                                     </div>
                                   </CardHeader>
 
-                                  <CardContent className="grid gap-2">
+                                  {/* ✅ تقليل padding */}
+                                  <CardContent className="grid gap-2 p-3 pt-3">
                                     {!has && (
                                       <div className="text-sm text-muted-foreground">
                                         لا توجد حجوزات في هذه الفترة.
@@ -601,56 +606,69 @@ export default function DashboardGrid(props: Props) {
                                           <div
                                             key={o.id}
                                             className={[
-                                              "rounded-2xl border p-3 ring-1",
+                                              "rounded-2xl border ring-1",
                                               "w-full max-w-full overflow-hidden",
+                                              "p-2 sm:p-3", // ✅ أنحف
                                               tone.bg,
                                               tone.border,
                                               tone.ring,
                                             ].join(" ")}
                                           >
-                                            {/* ✅ صف علوي مضغوط: عنوان + أيقونات */}
-                                            <div className="flex items-start justify-between gap-2">
-                                              <div className="min-w-0">
+                                            {/* ✅ سطر 1: الاسم + أيقونة التعديل فقط */}
+                                            <div className="flex items-start justify-between gap-2 min-w-0">
+                                              <div className="min-w-0 w-full">
                                                 <div className="font-extrabold truncate">
                                                   {occTitle(o)}
                                                 </div>
 
+                                                {/* ✅ سطر 2: العميل + أيقونة الحالة */}
                                                 {(o.client_name || o.client_phone) && (
-                                                  <div className="text-xs text-muted-foreground mt-1 break-words">
-                                                    {o.client_name ? `العميل: ${o.client_name}` : ""}
-                                                    {o.client_phone ? ` • ${o.client_phone}` : ""}
+                                                  <div className="mt-1 flex items-center justify-between gap-2 min-w-0">
+                                                    <div className="min-w-0 text-xs text-muted-foreground break-words">
+                                                      {o.client_name
+                                                        ? `العميل: ${o.client_name}`
+                                                        : ""}
+                                                      {o.client_phone
+                                                        ? ` • ${o.client_phone}`
+                                                        : ""}
+                                                    </div>
+
+                                                    <div
+                                                      className="inline-flex h-8 w-8 items-center justify-center rounded-xl border bg-white/70 shrink-0"
+                                                      title={title}
+                                                      aria-label={title}
+                                                    >
+                                                      <Icon className="h-5 w-5" />
+                                                    </div>
                                                   </div>
                                                 )}
                                               </div>
 
-                                              {/* ✅ أكشنز صغيرة (أيقونات فقط) */}
-                                              <div className="flex items-center gap-2 shrink-0">
-                                                <div
-                                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border bg-white/70"
-                                                  title={title}
-                                                  aria-label={title}
+                                              {/* تعديل (أيقونة فقط) */}
+                                              <Button
+                                                asChild
+                                                size="icon"
+                                                variant="outline"
+                                                className="h-9 w-9 rounded-xl shrink-0"
+                                                title="تعديل"
+                                              >
+                                                <Link
+                                                  href={`/bookings/${o.booking_id}/edit`}
                                                 >
-                                                  <Icon className="h-5 w-5" />
-                                                </div>
-
-                                                <Button
-                                                  asChild
-                                                  size="icon"
-                                                  variant="outline"
-                                                  className="h-9 w-9 rounded-xl"
-                                                  title="تعديل"
-                                                >
-                                                  <Link href={`/bookings/${o.booking_id}/edit`}>
-                                                    <Pencil className="h-5 w-5" />
-                                                    <span className="sr-only">تعديل</span>
-                                                  </Link>
-                                                </Button>
-                                              </div>
+                                                  <Pencil className="h-5 w-5" />
+                                                  <span className="sr-only">
+                                                    تعديل
+                                                  </span>
+                                                </Link>
+                                              </Button>
                                             </div>
 
-                                            {/* ✅ بادجات أقل + أصغر */}
+                                            {/* ✅ بادجات تحت */}
                                             <div className="flex flex-wrap gap-2 mt-3">
-                                              <Badge variant="secondary" className="rounded-full">
+                                              <Badge
+                                                variant="secondary"
+                                                className="rounded-full"
+                                              >
                                                 {kindLabel(kind)}
                                               </Badge>
 
@@ -668,7 +686,8 @@ export default function DashboardGrid(props: Props) {
                                                   variant="secondary"
                                                   className="rounded-full"
                                                 >
-                                                  المبلغ: {amt} {o.currency || ""}
+                                                  المبلغ: {amt}{" "}
+                                                  {o.currency || ""}
                                                 </Badge>
                                               ) : null}
                                             </div>
