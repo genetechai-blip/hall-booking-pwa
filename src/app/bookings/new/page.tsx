@@ -55,22 +55,29 @@ export default function NewBookingPage() {
   const [halls, setHalls] = useState<Hall[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
 
+  // ===== ترتيب الحقول حسب طلبك =====
+  const [title, setTitle] = useState<string>("");
   const [eventStartDate, setEventStartDate] = useState(isoToday());
-  const [eventDays, setEventDays] = useState<number>(1);
-  const [preDays, setPreDays] = useState<number>(0);
-  const [postDays, setPostDays] = useState<number>(0);
+  const [bookingType, setBookingType] = useState<BookingType>("death");
+  const [bookingStatus, setBookingStatus] = useState<BookingStatus>("hold");
 
+  // ✅ سكرول بدل كيبورد
+  const [eventDays, setEventDays] = useState<number>(1);
+  const [prepDays, setPrepDays] = useState<number>(0);   // التجهيز
+  const [cleanDays, setCleanDays] = useState<number>(0);  // التنظيف
+
+  // ✅ اختيار الصالات والفترات
   const [hallIds, setHallIds] = useState<number[]>([]);
   const [slotCodes, setSlotCodes] = useState<SlotCode[]>(["morning", "afternoon", "night"]);
 
-  const [title, setTitle] = useState<string>("");
-  const [bookingType, setBookingType] = useState<BookingType>("death");
-  const [bookingStatus, setBookingStatus] = useState<BookingStatus>("hold");
+  // بقية الحقول
   const [clientName, setClientName] = useState<string>("");
   const [clientPhone, setClientPhone] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+
   const [paymentAmount, setPaymentAmount] = useState<string>("");
-  const [currency, setCurrency] = useState<string>("د.ب");
+  // ✅ إزالة خيار العملة من الواجهة (نثبتها)
+  const currency = "د.ب";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,7 +86,10 @@ export default function NewBookingPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [hRes, sRes] = await Promise.all([fetch("/api/meta/halls"), fetch("/api/meta/slots")]);
+        const [hRes, sRes] = await Promise.all([
+          fetch("/api/meta/halls"),
+          fetch("/api/meta/slots"),
+        ]);
         const h = await hRes.json();
         const s = await sRes.json();
         setHalls(h || []);
@@ -111,7 +121,9 @@ export default function NewBookingPage() {
 
   async function createBooking() {
     setError("");
-    if (!eventStartDate) return setError("اختر تاريخ بداية.");
+
+    if (!title.trim()) return setError("اكتب عنوان الحجز.");
+    if (!eventStartDate) return setError("اختر تاريخ البداية.");
     if (eventDays < 1) return setError("عدد الأيام لازم يكون 1 أو أكثر.");
     if (hallIds.length === 0) return setError("اختر صالة واحدة على الأقل.");
     if (slotCodes.length === 0) return setError("اختر فترة واحدة على الأقل.");
@@ -130,10 +142,12 @@ export default function NewBookingPage() {
           notes,
           payment_amount: paymentAmount ? Number(paymentAmount) : null,
           currency,
+
           event_start_date: eventStartDate,
           event_days: Number(eventDays),
-          pre_days: Number(preDays),
-          post_days: Number(postDays),
+          pre_days: Number(prepDays),   // التجهيز
+          post_days: Number(cleanDays), // التنظيف
+
           hall_ids: hallIds,
           slot_codes: slotCodes,
         }),
@@ -142,7 +156,6 @@ export default function NewBookingPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "فشل إنشاء الحجز.");
 
-      // رجّع للداشبورد على نفس تاريخ البداية
       window.location.href = `/dashboard?date=${eventStartDate}`;
     } catch (e: any) {
       setError(e?.message || "فشل إنشاء الحجز.");
@@ -182,58 +195,115 @@ export default function NewBookingPage() {
                 </div>
               ) : null}
 
-              {/* التواريخ */}
-              <div className="grid gap-3 sm:grid-cols-4">
-                <div className="sm:col-span-2">
-                  <div className="text-sm font-semibold mb-1">تاريخ البداية</div>
-                  <Input
-                    dir="ltr"
-                    type="date"
-                    value={eventStartDate}
-                    onChange={(e) => setEventStartDate(e.target.value)}
-                    className="rounded-xl text-center"
-                  />
+              {/* 1) عنوان الحجز */}
+              <div className="grid gap-2">
+                <div className="text-sm font-semibold">عنوان الحجز</div>
+                <Input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="rounded-xl"
+                  placeholder="مثال: وفاة السيد..."
+                />
+              </div>
+
+              {/* 2) التاريخ */}
+              <div className="grid gap-2">
+                <div className="text-sm font-semibold">تاريخ البداية</div>
+                <Input
+                  dir="ltr"
+                  type="date"
+                  value={eventStartDate}
+                  onChange={(e) => setEventStartDate(e.target.value)}
+                  className="rounded-xl text-center"
+                />
+              </div>
+
+              {/* 3) نوع الحجز */}
+              <div className="grid gap-2">
+                <div className="text-sm font-semibold">نوع الحجز</div>
+                <Select value={bookingType} onValueChange={(v) => setBookingType(v as BookingType)}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue placeholder="اختر" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {(["death", "mawlid", "fatiha", "wedding", "special"] as BookingType[]).map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {kindLabel(k)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 4) حالة الحجز */}
+              <div className="grid gap-2">
+                <div className="text-sm font-semibold">حالة الحجز</div>
+                <Select value={bookingStatus} onValueChange={(v) => setBookingStatus(v as BookingStatus)}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue placeholder="اختر" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {(["confirmed", "hold", "cancelled"] as BookingStatus[]).map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {statusLabel(s)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 5) عدد الأيام + التجهيز/التنظيف (سكرول) */}
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">عدد الأيام</div>
+                  <Select value={String(eventDays)} onValueChange={(v) => setEventDays(Number(v))}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div>
-                  <div className="text-sm font-semibold mb-1">عدد الأيام</div>
-                  <Input
-                    dir="ltr"
-                    type="number"
-                    min={1}
-                    value={eventDays}
-                    onChange={(e) => setEventDays(Number(e.target.value || 1))}
-                    className="rounded-xl text-center"
-                  />
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">التجهيز</div>
+                  <Select value={String(prepDays)} onValueChange={(v) => setPrepDays(Number(v))}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {Array.from({ length: 8 }, (_, i) => i).map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <div className="text-sm font-semibold mb-1">قبل</div>
-                    <Input
-                      dir="ltr"
-                      type="number"
-                      min={0}
-                      value={preDays}
-                      onChange={(e) => setPreDays(Number(e.target.value || 0))}
-                      className="rounded-xl text-center"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold mb-1">بعد</div>
-                    <Input
-                      dir="ltr"
-                      type="number"
-                      min={0}
-                      value={postDays}
-                      onChange={(e) => setPostDays(Number(e.target.value || 0))}
-                      className="rounded-xl text-center"
-                    />
-                  </div>
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">التنظيف</div>
+                  <Select value={String(cleanDays)} onValueChange={(v) => setCleanDays(Number(v))}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {Array.from({ length: 8 }, (_, i) => i).map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
-              {/* الصالات */}
+              {/* 6) اختيار الصالات (كل صالتين بسطر على الموبايل) */}
               <div className="grid gap-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">اختر الصالات</div>
@@ -242,7 +312,7 @@ export default function NewBookingPage() {
                   </Badge>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {halls.map((h) => {
                     const active = hallIds.includes(h.id);
                     return (
@@ -250,7 +320,7 @@ export default function NewBookingPage() {
                         key={h.id}
                         type="button"
                         variant={active ? "default" : "outline"}
-                        className="rounded-xl"
+                        className="rounded-xl w-full justify-center"
                         onClick={() => toggleHall(h.id)}
                       >
                         {h.name}
@@ -260,7 +330,7 @@ export default function NewBookingPage() {
                 </div>
               </div>
 
-              {/* الفترات */}
+              {/* 7) اختيار الفترات (عرض كامل + نفس ستايل الصالات) */}
               <div className="grid gap-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">اختر الفترات</div>
@@ -269,15 +339,15 @@ export default function NewBookingPage() {
                   </Badge>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {(["morning", "afternoon", "night"] as SlotCode[]).map((code) => {
                     const active = slotCodes.includes(code);
                     return (
                       <Button
                         key={code}
                         type="button"
-                        variant={active ? "secondary" : "outline"}
-                        className="rounded-xl"
+                        variant={active ? "default" : "outline"} // ✅ أسود عند التحديد
+                        className="rounded-xl w-full"
                         onClick={() => toggleSlot(code)}
                       >
                         {slotLabel(code)}
@@ -286,64 +356,17 @@ export default function NewBookingPage() {
                   })}
                 </div>
 
-                {/* عرض أوقات الفترات (اختياري/مفيد) */}
                 <div className="text-xs text-muted-foreground">
-                  {slots.length ? "الأوقات حسب إعدادات النظام." : ""}
+                  الأوقات حسب إعدادات النظام.
                 </div>
               </div>
 
-              {/* نوع/حالة */}
+              {/* بقية الحقول */}
+              <Separator />
+
               <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <div className="text-sm font-semibold mb-1">نوع الحجز</div>
-                  <Select value={bookingType} onValueChange={(v) => setBookingType(v as BookingType)}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="اختر" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      {(["death", "mawlid", "fatiha", "wedding", "special"] as BookingType[]).map((k) => (
-                        <SelectItem key={k} value={k}>
-                          {kindLabel(k)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <div className="text-sm font-semibold mb-1">حالة الحجز</div>
-                  <Select
-                    value={bookingStatus}
-                    onValueChange={(v) => setBookingStatus(v as BookingStatus)}
-                  >
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="اختر" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      {(["confirmed", "hold", "cancelled"] as BookingStatus[]).map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {statusLabel(s)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* العنوان والعميل */}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <div className="text-sm font-semibold mb-1">عنوان الحجز</div>
-                  <Input
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="rounded-xl"
-                    placeholder="مثال: وفاة السيد..."
-                  />
-                </div>
-
-                <div>
-                  <div className="text-sm font-semibold mb-1">اسم العميل</div>
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">اسم العميل</div>
                   <Input
                     value={clientName}
                     onChange={(e) => setClientName(e.target.value)}
@@ -352,8 +375,8 @@ export default function NewBookingPage() {
                   />
                 </div>
 
-                <div>
-                  <div className="text-sm font-semibold mb-1">هاتف العميل</div>
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold">هاتف العميل</div>
                   <Input
                     dir="ltr"
                     value={clientPhone}
@@ -364,27 +387,22 @@ export default function NewBookingPage() {
                 </div>
               </div>
 
-              {/* مبلغ + عملة */}
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="sm:col-span-2">
-                  <div className="text-sm font-semibold mb-1">المبلغ</div>
+              <div className="grid gap-2">
+                <div className="text-sm font-semibold">المبلغ (اختياري)</div>
+                <div className="flex items-center gap-2">
                   <Input
                     dir="ltr"
                     value={paymentAmount}
                     onChange={(e) => setPaymentAmount(e.target.value)}
-                    className="rounded-xl"
-                    placeholder="مثال: 50"
+                    className="rounded-xl text-center"
+                    placeholder="50"
                   />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold mb-1">العملة</div>
-                  <Input value={currency} onChange={(e) => setCurrency(e.target.value)} className="rounded-xl" />
+                  <div className="text-sm font-semibold whitespace-nowrap">{currency}</div>
                 </div>
               </div>
 
-              {/* ملاحظات */}
-              <div>
-                <div className="text-sm font-semibold mb-1">ملاحظات</div>
+              <div className="grid gap-2">
+                <div className="text-sm font-semibold">ملاحظات</div>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -394,7 +412,7 @@ export default function NewBookingPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end pt-2">
                 <Button
                   type="button"
                   className="rounded-xl"
