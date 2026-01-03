@@ -33,6 +33,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+// ✅ Icons (shadcn-friendly)
+import { Pencil, CheckCircle2, Clock3, XCircle } from "lucide-react";
+
 const BAHRAIN_TZ = "Asia/Bahrain";
 type ViewMode = "day" | "week" | "month";
 
@@ -89,6 +92,13 @@ function statusLabel(st: BookingStatus) {
     case "cancelled":
       return "ملغي";
   }
+}
+
+function statusIcon(st: BookingStatus) {
+  // ✅ أيقونة فقط + title
+  if (st === "confirmed") return { Icon: CheckCircle2, title: "مؤكد" };
+  if (st === "hold") return { Icon: Clock3, title: "مبدئي" };
+  return { Icon: XCircle, title: "ملغي" };
 }
 
 function occDayISO(o: DashboardOccurrence) {
@@ -287,7 +297,7 @@ export default function DashboardGrid(props: Props) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <CardTitle className="text-2xl font-extrabold">
-                جدولي الحجوزات
+                جدول الحجوزات
               </CardTitle>
               <div className="text-sm text-muted-foreground mt-1">
                 مستخدم: <span className="font-bold">{myName}</span>
@@ -440,7 +450,6 @@ export default function DashboardGrid(props: Props) {
                   const kinds = sum?.kinds || [];
                   const hasAny = statuses.length > 0;
 
-                  // أكثر نوع تكراراً
                   let label = "";
                   let short = "";
                   if (kinds.length > 0) {
@@ -483,20 +492,25 @@ export default function DashboardGrid(props: Props) {
 
                       {hasAny ? (
                         <div className="w-full px-1">
+                          {/* ✅ هنا الإصلاح: الموبايل بدون ellipsis نهائيًا + توسيط مضبوط */}
                           <div
-                            className="mx-auto max-w-full rounded-full bg-white/70 border px-2 py-[2px]
-                                      text-[11px] sm:text-[12px] font-bold text-center"
+                            className="mx-auto max-w-full rounded-full bg-white/70 border px-2
+                                       h-6 sm:h-auto
+                                       flex items-center justify-center
+                                       text-[12px] sm:text-[12px] font-extrabold leading-none
+                                       text-center"
                             title={label}
                           >
-                            {/* ✅ موبايل: حرف واحد بدون ellipsis */}
-                            <span className="sm:hidden leading-none">{short}</span>
+                            <span className="sm:hidden">{short}</span>
 
-                            {/* ✅ شاشات أكبر: الكلمة كاملة مع قص أنيق */}
-                            <span className="hidden sm:inline truncate">{label}</span>
+                            {/* ✅ الديسكتوب/تابلت: كلمة كاملة مع truncate فقط هنا */}
+                            <span className="hidden sm:inline truncate max-w-[88px]">
+                              {label}
+                            </span>
                           </div>
                         </div>
                       ) : (
-                        <div className="h-[18px]" />
+                        <div className="h-[24px]" />
                       )}
                     </button>
                   );
@@ -581,20 +595,22 @@ export default function DashboardGrid(props: Props) {
                                           : "";
                                         const amt = occAmount(o);
 
+                                        const { Icon, title } = statusIcon(st);
+
                                         return (
                                           <div
                                             key={o.id}
                                             className={[
                                               "rounded-2xl border p-3 ring-1",
-                                              "w-full max-w-full overflow-hidden", // ✅ يمنع خروج المحتوى
+                                              "w-full max-w-full overflow-hidden",
                                               tone.bg,
                                               tone.border,
                                               tone.ring,
                                             ].join(" ")}
                                           >
-                                            {/* ✅ على الموبايل نخليها عمودية لتفادي overflow */}
-                                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 min-w-0">
-                                              <div className="min-w-0 w-full">
+                                            {/* ✅ صف علوي مضغوط: عنوان + أيقونات */}
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div className="min-w-0">
                                                 <div className="font-extrabold truncate">
                                                   {occTitle(o)}
                                                 </div>
@@ -607,30 +623,34 @@ export default function DashboardGrid(props: Props) {
                                                 )}
                                               </div>
 
-                                              <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-                                                <Badge className="rounded-full">
-                                                  {statusLabel(st)}
-                                                </Badge>
+                                              {/* ✅ أكشنز صغيرة (أيقونات فقط) */}
+                                              <div className="flex items-center gap-2 shrink-0">
+                                                <div
+                                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border bg-white/70"
+                                                  title={title}
+                                                  aria-label={title}
+                                                >
+                                                  <Icon className="h-5 w-5" />
+                                                </div>
 
                                                 <Button
                                                   asChild
-                                                  size="sm"
+                                                  size="icon"
                                                   variant="outline"
-                                                  className="rounded-xl"
+                                                  className="h-9 w-9 rounded-xl"
+                                                  title="تعديل"
                                                 >
                                                   <Link href={`/bookings/${o.booking_id}/edit`}>
-                                                    تعديل
+                                                    <Pencil className="h-5 w-5" />
+                                                    <span className="sr-only">تعديل</span>
                                                   </Link>
                                                 </Button>
                                               </div>
                                             </div>
 
-                                            {/* ✅ بادجات تحت مع لف */}
+                                            {/* ✅ بادجات أقل + أصغر */}
                                             <div className="flex flex-wrap gap-2 mt-3">
-                                              <Badge
-                                                variant="secondary"
-                                                className="rounded-full"
-                                              >
+                                              <Badge variant="secondary" className="rounded-full">
                                                 {kindLabel(kind)}
                                               </Badge>
 
