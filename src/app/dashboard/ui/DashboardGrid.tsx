@@ -12,36 +12,16 @@ import type {
   BookingStatus,
 } from "@/lib/types";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
 const BAHRAIN_TZ = "Asia/Bahrain";
+
 type ViewMode = "day" | "week" | "month";
 
 type Props = {
   halls: Hall[];
   slots: Slot[];
-  days: string[];
-  start: string; // YYYY-MM-DD
-  anchorDate?: string;
+  days: string[]; // موجود (حتى لو ما نستخدمه بالكامل)
+  start: string; // ISO date (YYYY-MM-DD)
+  anchorDate?: string; // مدعوم
   occurrences: DashboardOccurrence[];
 };
 
@@ -61,22 +41,6 @@ function kindLabel(kind: BookingType | null | undefined) {
       return "زواج";
     default:
       return "خاصة";
-  }
-}
-
-// ✅ حرف واحد للموبايل
-function kindShortLabel(kind: BookingType | null | undefined) {
-  switch (kind) {
-    case "death":
-      return "و";
-    case "mawlid":
-      return "م";
-    case "fatiha":
-      return "ف";
-    case "wedding":
-      return "ز";
-    default:
-      return "خ";
   }
 }
 
@@ -112,8 +76,8 @@ function addDays(iso: string, n: number) {
     .toISODate()!;
 }
 
-function monthGridStart(anchorISO: string) {
-  const d = DateTime.fromISO(anchorISO, { zone: BAHRAIN_TZ }).startOf("month");
+function monthGridStart(iso: string) {
+  const d = DateTime.fromISO(iso, { zone: BAHRAIN_TZ }).startOf("month");
   return startOfWeekSunday(d.toISODate()!);
 }
 
@@ -122,6 +86,64 @@ function monthGridDays(anchorISO: string) {
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
 }
 
+function dayToneByStatus(statuses: BookingStatus[]) {
+  if (statuses.includes("confirmed"))
+    return { bg: "rgba(176,0,32,0.10)", border: "rgba(176,0,32,0.25)" };
+  if (statuses.includes("hold"))
+    return { bg: "rgba(255,152,0,0.12)", border: "rgba(255,152,0,0.25)" };
+  if (statuses.includes("cancelled"))
+    return { bg: "rgba(120,120,120,0.10)", border: "rgba(120,120,120,0.20)" };
+  return { bg: "#fff", border: "#e9e9e9" };
+}
+
+function Icon({ name }: { name: "plus" | "gear" | "logout" | "edit" }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  if (name === "plus")
+    return (
+      <svg {...common}>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+      </svg>
+    );
+
+  if (name === "gear")
+    return (
+      <svg {...common}>
+        <path d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.6a7.9 7.9 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.9 7.9 0 0 0-1.7 1L6.5 9.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 .1 1 7.8 7.8 0 0 0-.1 1l-2 1.2 2 3.4 2.3-.6a7.9 7.9 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.9 7.9 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2a7.8 7.8 0 0 0-.1-1z" />
+        <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+      </svg>
+    );
+
+  if (name === "logout")
+    return (
+      <svg {...common}>
+        <path d="M10 17l-1 0a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1" />
+        <path d="M15 12H9" />
+        <path d="M15 12l-3-3" />
+        <path d="M15 12l-3 3" />
+        <path d="M18 19V5" />
+      </svg>
+    );
+
+  return (
+    <svg {...common}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}
+
+/** Helpers: اشتغل فقط على الـ flat fields */
 function occTitle(o: DashboardOccurrence) {
   return (o.booking_title ?? o.title ?? "").trim() || `حجز #${o.booking_id}`;
 }
@@ -129,129 +151,16 @@ function occStatus(o: DashboardOccurrence): BookingStatus {
   return (o.booking_status ?? o.status ?? "hold") as BookingStatus;
 }
 function occType(o: DashboardOccurrence): BookingType {
-  return (o.booking_type ?? o.kind ?? "special") as BookingType;
+  return (o.booking_type ?? o.booking_type ?? o.kind ?? "special") as BookingType;
 }
 function occAmount(o: DashboardOccurrence): number | null {
   const v = o.payment_amount ?? o.amount;
   return typeof v === "number" ? v : null;
 }
 
-function dayToneByStatus(statuses: BookingStatus[]) {
-  // ألوان هادية (iOS-ish)
-  if (statuses.includes("confirmed"))
-    return { bg: "bg-red-50", ring: "ring-red-200", border: "border-red-200" };
-  if (statuses.includes("hold"))
-    return {
-      bg: "bg-amber-50",
-      ring: "ring-amber-200",
-      border: "border-amber-200",
-    };
-  if (statuses.includes("cancelled"))
-    return {
-      bg: "bg-zinc-50",
-      ring: "ring-zinc-200",
-      border: "border-zinc-200",
-    };
-  return { bg: "bg-background", ring: "ring-border", border: "border-border" };
-}
-
-/** Icons بدون أي مكتبات إضافية */
-function IconPencil({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M12 20h9"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconCheck({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none">
-      <path
-        d="M20 6 9 17l-5-5"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconClock({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none">
-      <path
-        d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10Z"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <path
-        d="M12 6v6l4 2"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconX({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none">
-      <path
-        d="M18 6 6 18M6 6l12 12"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function StatusMiniIcon({ st }: { st: BookingStatus }) {
-  // أيقونة صغيرة بجانب العنوان
-  const common =
-    "inline-flex items-center justify-center rounded-full border bg-white/70 text-muted-foreground";
-  if (st === "confirmed")
-    return (
-      <span className={`${common} h-5 w-5`} title="مؤكد" aria-label="مؤكد">
-        <IconCheck className="h-3.5 w-3.5 text-foreground" />
-      </span>
-    );
-  if (st === "hold")
-    return (
-      <span className={`${common} h-5 w-5`} title="مبدئي" aria-label="مبدئي">
-        <IconClock className="h-3.5 w-3.5" />
-      </span>
-    );
-  return (
-    <span className={`${common} h-5 w-5`} title="ملغي" aria-label="ملغي">
-      <IconX className="h-3.5 w-3.5" />
-    </span>
-  );
-}
-
 export default function DashboardGrid(props: Props) {
   const supabase = useMemo(() => supabaseBrowser(), []);
-  const [view, setView] = useState<ViewMode>("month");
+  const [view, setView] = useState<ViewMode>("month"); // ✅ الديفولت شهري
   const [anchor, setAnchor] = useState<string>(props.anchorDate || isoToday());
   const [hallFilter, setHallFilter] = useState<number | "all">("all");
 
@@ -276,12 +185,13 @@ export default function DashboardGrid(props: Props) {
     })();
   }, [supabase]);
 
-  // أسماء من أضافوا الحجوزات
+  // أسماء من أضافوا الحجوزات (بدل UUID)
   useEffect(() => {
     (async () => {
       const ids = new Set<string>();
-      for (const o of props.occurrences) if (o.created_by) ids.add(o.created_by);
-
+      for (const o of props.occurrences) {
+        if (o.created_by) ids.add(o.created_by);
+      }
       const list = Array.from(ids);
       if (list.length === 0) return;
 
@@ -317,25 +227,6 @@ export default function DashboardGrid(props: Props) {
     return map;
   }, [occFiltered]);
 
-  // ملخص الشهري: day -> { kinds[], statuses[] }
-  const monthSummary = useMemo(() => {
-    const summary = new Map<
-      string,
-      { kinds: BookingType[]; statuses: BookingStatus[] }
-    >();
-    for (const o of occFiltered) {
-      const d = occDayISO(o);
-      const kind = occType(o);
-      const st = occStatus(o);
-
-      const cur = summary.get(d) || { kinds: [], statuses: [] };
-      cur.kinds.push(kind);
-      cur.statuses.push(st);
-      summary.set(d, cur);
-    }
-    return summary;
-  }, [occFiltered]);
-
   function navPrev() {
     if (view === "day") setAnchor(addDays(anchor, -1));
     else if (view === "week") setAnchor(addDays(anchor, -7));
@@ -360,441 +251,399 @@ export default function DashboardGrid(props: Props) {
     setAnchor(isoToday());
   }
 
-  const viewDays = useMemo(() => {
+  function daysForCurrentView(): string[] {
     if (view === "day") return [anchor];
     if (view === "week") {
       const start = startOfWeekSunday(anchor);
       return Array.from({ length: 7 }, (_, i) => addDays(start, i));
     }
     return monthGridDays(anchor);
-  }, [view, anchor]);
+  }
 
-  const monthTitle = useMemo(() => {
-    return DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).toFormat("LLLL yyyy");
-  }, [anchor]);
+  const viewDays = useMemo(() => daysForCurrentView(), [view, anchor]);
+
+  /**
+   * ✅ ملخص الشهري: يجمع الأنواع والحالات حسب اليوم
+   * مهم جداً: يعتمد على booking_type/booking_status (flat) وليس o.bookings
+   */
+  const monthSummary = useMemo(() => {
+    const summary = new Map<string, { kinds: BookingType[]; statuses: BookingStatus[] }>();
+
+    for (const o of occFiltered) {
+      const d = occDayISO(o);
+      const kind = occType(o);
+      const st = occStatus(o);
+
+      const cur = summary.get(d) || { kinds: [], statuses: [] };
+      cur.kinds.push(kind);
+      cur.statuses.push(st);
+      summary.set(d, cur);
+    }
+
+    return summary;
+  }, [occFiltered]);
+
+  // styles
+  const cardStyle: React.CSSProperties = { borderRadius: 18, padding: 14 };
+
+  const pillGroup: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 1fr",
+    gap: 10,
+    width: "100%",
+  };
+
+  const pillBtn = (active: boolean): React.CSSProperties => ({
+    border: "1px solid #e2e2e2",
+    borderRadius: 999,
+    padding: "10px 12px",
+    background: active ? "#111" : "#fff",
+    color: active ? "#fff" : "#0b66c3",
+    fontWeight: 800,
+    cursor: "pointer",
+  });
+
+  const actionBtn: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 14px",
+    borderRadius: 14,
+    border: "1px solid #e6e6e6",
+    background: "#fff",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+    textDecoration: "none",
+    fontWeight: 800,
+    color: "#0b66c3",
+    whiteSpace: "nowrap",
+  };
+
+  const actionBtnPrimary: React.CSSProperties = {
+    ...actionBtn,
+    background: "#111",
+    color: "#fff",
+    borderColor: "#111",
+  };
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-3 pb-10 pt-4">
-      {/* Header (مرة وحدة فقط) */}
-      <Card className="rounded-2xl shadow-sm">
-        <CardHeader className="space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <CardTitle className="text-2xl font-extrabold">
-                جدول الحجوزات
-              </CardTitle>
-              <div className="text-sm text-muted-foreground mt-1">
-                مستخدم: <span className="font-bold">{myName}</span>
-              </div>
-            </div>
-
-            {/* Desktop actions */}
-            <div className="hidden sm:flex items-center gap-2">
-              <Button asChild className="rounded-xl">
-                <Link href="/bookings/new">إضافة حجز</Link>
-              </Button>
-              <Button asChild variant="secondary" className="rounded-xl">
-                <Link href="/settings">الإعدادات</Link>
-              </Button>
-              <Button asChild variant="outline" className="rounded-xl">
-                <a href="/api/auth/signout">خروج</a>
-              </Button>
-            </div>
-
-            {/* Mobile actions */}
-            <div className="sm:hidden">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="rounded-xl">
-                    ⋯
-                  </Button>
-                </DropdownMenuTrigger>
-
-                {/* ✅ مسافة عن حافة الشاشة */}
-                <DropdownMenuContent
-                  align="end"
-                  sideOffset={10}
-                  alignOffset={6}
-                  collisionPadding={14}
-                  className="rounded-xl p-2"
-                >
-                  <DropdownMenuItem asChild>
-                    <Link href="/bookings/new">إضافة حجز</Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings">الإعدادات</Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <a href="/api/auth/signout">خروج</a>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+    <div className="grid" style={{ gap: 12 }}>
+      {/* Header */}
+      <div className="card" style={cardStyle}>
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "flex-start" }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 26, fontWeight: 900 }}>جدول الحجوزات</div>
+            <div className="muted" style={{ marginTop: 4 }}>
+              مستخدم: <strong>{myName}</strong>
             </div>
           </div>
 
-          <Separator />
+          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+            <Link href="/bookings/new" style={actionBtnPrimary}>
+              <Icon name="plus" />
+              <span>إضافة حجز</span>
+            </Link>
 
-          {/* Controls */}
-          <div className="grid gap-3">
-            <Tabs
-              value={view}
-              onValueChange={(v) => setView(v as ViewMode)}
-              className="w-full"
-            >
-              <TabsList className="grid w-full grid-cols-3 rounded-2xl">
-                <TabsTrigger value="month">شهري</TabsTrigger>
-                <TabsTrigger value="week">أسبوعي</TabsTrigger>
-                <TabsTrigger value="day">يومي</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <Link href="/settings" style={actionBtn}>
+              <Icon name="gear" />
+              <span>الإعدادات</span>
+            </Link>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="min-w-0 w-full">
-                <div className="text-sm font-semibold mb-1 text-right">
-                  اختر تاريخ
-                </div>
-
-                <div className="w-full max-w-full overflow-hidden">
-                  <Input
-                    dir="ltr"
-                    type="date"
-                    value={anchor}
-                    onChange={(e) => setAnchor(e.target.value)}
-                    className="block w-full max-w-full min-w-0 rounded-xl text-center"
-                  />
-                </div>
-              </div>
-
-              <div className="min-w-0">
-                <div className="text-sm font-semibold mb-1">فلتر الصالة</div>
-                <Select
-                  value={hallFilter === "all" ? "all" : String(hallFilter)}
-                  onValueChange={(v) =>
-                    setHallFilter(v === "all" ? "all" : Number(v))
-                  }
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="اختر" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="all">الكل</SelectItem>
-                    {props.halls.map((h) => (
-                      <SelectItem key={h.id} value={String(h.id)}>
-                        {h.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-end gap-2">
-                <Button
-                  variant="outline"
-                  className="rounded-xl flex-1"
-                  onClick={navPrev}
-                >
-                  السابق
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="rounded-xl flex-1"
-                  onClick={navToday}
-                >
-                  اليوم
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-xl flex-1"
-                  onClick={navNext}
-                >
-                  القادم
-                </Button>
-              </div>
-            </div>
+            <a href="/api/auth/signout" style={actionBtn}>
+              <Icon name="logout" />
+              <span>خروج</span>
+            </a>
           </div>
-        </CardHeader>
-      </Card>
-
-      {/* محتوى */}
-      <div className="mt-4">
-        {/* Month */}
-        {view === "month" && (
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="font-bold">{monthTitle}</div>
-                <div className="text-xs text-muted-foreground">
-                  اضغط على اليوم لعرض التفاصيل
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent className="p-3 pt-0">
-              <div className="grid grid-cols-7 gap-2">
-                {viewDays.map((d) => {
-                  const isThisMonth =
-                    DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month ===
-                    DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
-
-                  const sum = monthSummary.get(d);
-                  const statuses = sum?.statuses || [];
-                  const kinds = sum?.kinds || [];
-                  const hasAny = statuses.length > 0;
-
-                  // أكثر نوع تكراراً
-                  let label = "";
-                  let short = "";
-                  if (kinds.length > 0) {
-                    const counts = new Map<BookingType, number>();
-                    for (const k of kinds)
-                      counts.set(k, (counts.get(k) || 0) + 1);
-
-                    let best: BookingType = kinds[0];
-                    let bestN = 0;
-                    counts.forEach((n, k) => {
-                      if (n > bestN) {
-                        best = k;
-                        bestN = n;
-                      }
-                    });
-                    label = kindLabel(best);
-                    short = kindShortLabel(best);
-                  }
-
-                  const tone = dayToneByStatus(statuses);
-
-                  return (
-                    <button
-                      key={d}
-                      onClick={() => {
-                        setAnchor(d);
-                        setView("day");
-                      }}
-                      className={[
-                        "h-[56px] sm:h-[76px] w-full",
-                        "rounded-2xl border",
-                        "flex flex-col items-center justify-center gap-1",
-                        "transition active:scale-[0.99]",
-                        "px-1",
-                        hasAny ? `${tone.bg} ${tone.border}` : "bg-background",
-                        isThisMonth ? "opacity-100" : "opacity-40",
-                      ].join(" ")}
-                    >
-                      <div className="text-[16px] sm:text-[18px] font-extrabold leading-none text-center">
-                        {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}
-                      </div>
-
-                      {hasAny ? (
-                        <div className="w-full flex justify-center">
-                          {/* ✅ موبايل: دائرة صغيرة بحرف واحد (بدون ellipsis) */}
-                          <span
-                            className={[
-                              "inline-flex items-center justify-center",
-                              "rounded-full border bg-white/70",
-                              "leading-none font-extrabold",
-                              "h-5 w-5 sm:h-6 sm:w-auto sm:px-2",
-                              "text-[12px] sm:text-[12px]",
-                            ].join(" ")}
-                            title={label}
-                          >
-                            <span className="sm:hidden">{short}</span>
-
-                            {/* ✅ شاشات أكبر: الكلمة كاملة (قد تُقص بالـ truncate فقط هنا) */}
-                            <span className="hidden sm:inline truncate max-w-[72px]">
-                              {label}
-                            </span>
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="h-[20px]" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Day/Week */}
-        {view !== "month" && (
-          <div className="grid gap-3">
-            {props.halls
-              .filter((h) => (hallFilter === "all" ? true : h.id === hallFilter))
-              .map((h) => (
-                <Card key={h.id} className="rounded-2xl shadow-sm">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-extrabold text-lg">{h.name}</div>
-                      <Badge variant="secondary" className="rounded-full">
-                        {fmtDayHuman(anchor)}
-                      </Badge>
-                    </div>
-                    {view === "week" && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        عرض أسبوعي (قائمة)
-                      </div>
-                    )}
-                  </CardHeader>
-
-                  <CardContent className="grid gap-3 p-3 pt-0">
-                    {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map(
-                      (d) => (
-                        <Card key={`${h.id}_${d}`} className="rounded-2xl">
-                          <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between gap-2 min-w-0">
-                              <div className="font-bold truncate min-w-0">
-                                {fmtDayHuman(d)}
-                              </div>
-                              <div className="text-xs text-muted-foreground whitespace-nowrap">
-                                {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).toFormat(
-                                  "dd LLL yyyy"
-                                )}
-                              </div>
-                            </div>
-                          </CardHeader>
-
-                          <CardContent className="grid gap-3 p-3 pt-0">
-                            {props.slots.map((s) => {
-                              const key = `${d}__${h.id}__${s.id}`;
-                              const list = occMap.get(key) || [];
-                              const has = list.length > 0;
-
-                              return (
-                                <Card key={s.id} className="rounded-2xl">
-                                  <CardHeader className="pb-2">
-                                    <div className="flex items-center justify-between gap-2 min-w-0">
-                                      <div className="font-extrabold truncate min-w-0">
-                                        {s.name}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground whitespace-nowrap">
-                                        {s.start_time} - {s.end_time}
-                                      </div>
-                                    </div>
-                                  </CardHeader>
-
-                                  <CardContent className="grid gap-2 p-3 pt-0">
-                                    {!has && (
-                                      <div className="text-sm text-muted-foreground">
-                                        لا توجد حجوزات في هذه الفترة.
-                                      </div>
-                                    )}
-
-                                    {has &&
-                                      list.map((o) => {
-                                        const st = occStatus(o);
-                                        const kind = occType(o);
-                                        const tone = dayToneByStatus([st]);
-                                        const who = o.created_by
-                                          ? creatorNames[o.created_by] ||
-                                            o.created_by
-                                          : "";
-                                        const amt = occAmount(o);
-
-                                        // ✅ العميل + المبلغ بنفس السطر (بدون كلمة "المبلغ")
-                                        const clientLineParts: string[] = [];
-                                        if (o.client_name) clientLineParts.push(o.client_name);
-                                        else if (o.client_phone) clientLineParts.push(o.client_phone);
-
-                                        const clientLine =
-                                          clientLineParts.length > 0
-                                            ? `العميل: ${clientLineParts.join(" ")}`
-                                            : "";
-
-                                        const amountPart =
-                                          typeof amt === "number" ? ` - ${amt} د.ب` : "";
-
-                                        return (
-                                          <div
-                                            key={o.id}
-                                            className={[
-                                              "rounded-2xl border ring-1",
-                                              "w-full max-w-full overflow-hidden",
-                                              "p-2.5", // ✅ أقل padding
-                                              tone.bg,
-                                              tone.border,
-                                              tone.ring,
-                                            ].join(" ")}
-                                          >
-                                            <div className="flex items-start justify-between gap-2">
-                                              <div className="min-w-0 flex-1">
-                                                {/* ✅ العنوان + أيقونة الحالة الصغيرة */}
-                                                <div className="flex items-start gap-2 min-w-0">
-                                                  <div className="font-extrabold text-[15px] leading-snug truncate min-w-0">
-                                                    {occTitle(o)}
-                                                  </div>
-                                                  <div className="shrink-0 mt-[2px]">
-                                                    <StatusMiniIcon st={st} />
-                                                  </div>
-                                                </div>
-
-                                                {/* ✅ سطر العميل + المبلغ */}
-                                                {(clientLine || amountPart) && (
-                                                  <div className="text-xs text-muted-foreground mt-0.5 break-words">
-                                                    {clientLine}
-                                                    {amountPart}
-                                                  </div>
-                                                )}
-
-                                                {/* ✅ سطر النوع + بواسطة */}
-                                                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                                                  <span className="inline-flex items-center rounded-full bg-white/60 border px-2 py-0.5 font-bold">
-                                                    {kindLabel(kind)}
-                                                  </span>
-
-                                                  {who ? (
-                                                    <span className="text-muted-foreground">
-                                                      بواسطة: {who}
-                                                    </span>
-                                                  ) : null}
-
-                                                  {o.client_phone && !o.client_name ? (
-                                                    <span className="text-muted-foreground">
-                                                      • {o.client_phone}
-                                                    </span>
-                                                  ) : null}
-                                                </div>
-
-                                                {o.notes ? (
-                                                  <div className="text-sm mt-2 whitespace-pre-wrap break-words">
-                                                    {o.notes}
-                                                  </div>
-                                                ) : null}
-                                              </div>
-
-                                              {/* ✅ زر تعديل صغير */}
-                                              <Button
-                                                asChild
-                                                size="icon"
-                                                variant="outline"
-                                                className="rounded-xl h-9 w-9 shrink-0"
-                                              >
-                                                <Link
-                                                  href={`/bookings/${o.booking_id}/edit`}
-                                                  aria-label="تعديل"
-                                                >
-                                                  <IconPencil className="h-4 w-4" />
-                                                </Link>
-                                              </Button>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                  </CardContent>
-                                </Card>
-                              );
-                            })}
-                          </CardContent>
-                        </Card>
-                      )
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-          </div>
-        )}
+        </div>
       </div>
+
+      {/* Controls */}
+      <div className="card" style={cardStyle}>
+        <div style={pillGroup}>
+          <button style={pillBtn(view === "month")} onClick={() => setView("month")}>
+            شهري
+          </button>
+          <button style={pillBtn(view === "week")} onClick={() => setView("week")}>
+            أسبوعي
+          </button>
+          <button style={pillBtn(view === "day")} onClick={() => setView("day")}>
+            يومي
+          </button>
+        </div>
+
+        <div className="grid" style={{ marginTop: 12, gap: 10 }}>
+          <div>
+            <label className="label">اختر تاريخ</label>
+            <input
+              className="input"
+              type="date"
+              value={anchor}
+              onChange={(e) => setAnchor(e.target.value)}
+              style={{ fontSize: 16, width: "100%", maxWidth: "100%" }}
+            />
+          </div>
+
+          <div>
+            <label className="label">فلتر الصالة</label>
+            <select
+              className="select"
+              value={hallFilter}
+              onChange={(e) =>
+                setHallFilter(e.target.value === "all" ? "all" : Number(e.target.value))
+              }
+              style={{ fontSize: 16 }}
+            >
+              <option value="all">الكل</option>
+              {props.halls.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <button className="btn" onClick={navPrev}>
+              السابق
+            </button>
+            <button className="btn" onClick={navToday}>
+              اليوم
+            </button>
+            <button className="btn" onClick={navNext}>
+              القادم
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Month View */}
+      {view === "month" && (
+        <div className="card" style={cardStyle}>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <strong style={{ fontSize: 16 }}>
+              {DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).toFormat("LLLL yyyy")}
+            </strong>
+            <span className="muted small">اضغط على اليوم لعرض التفاصيل</span>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: 8,
+              marginTop: 12,
+            }}
+          >
+            {viewDays.map((d) => {
+              const isThisMonth =
+                DateTime.fromISO(d, { zone: BAHRAIN_TZ }).month ===
+                DateTime.fromISO(anchor, { zone: BAHRAIN_TZ }).month;
+
+              const sum = monthSummary.get(d);
+              const statuses = sum?.statuses || [];
+              const kinds = sum?.kinds || [];
+              const hasAny = statuses.length > 0;
+              const tone = dayToneByStatus(statuses);
+
+              // الأكثر تكراراً
+              let label = "";
+              if (kinds.length > 0) {
+                const counts = new Map<BookingType, number>();
+                for (const k of kinds) counts.set(k, (counts.get(k) || 0) + 1);
+
+                let best: BookingType = kinds[0];
+                let bestN = 0;
+                counts.forEach((n, k) => {
+                  if (n > bestN) {
+                    best = k;
+                    bestN = n;
+                  }
+                });
+
+                label = kindLabel(best);
+              }
+
+              return (
+                <button
+                  key={d}
+                  onClick={() => {
+                    setAnchor(d);
+                    setView("day");
+                  }}
+                  style={{
+                    textAlign: "start",
+                    padding: 10,
+                    borderRadius: 14,
+                    border: "1px solid #e9e9e9",
+                    background: hasAny ? tone.bg : "#fff",
+                    opacity: isThisMonth ? 1 : 0.45,
+                    cursor: "pointer",
+                    minHeight: 62,
+                  }}
+                >
+                  <div style={{ fontWeight: 900 }}>
+                    {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).day}
+                  </div>
+
+                  {hasAny && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        display: "inline-flex",
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        border: `1px solid ${tone.border}`,
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {label}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Day/Week View */}
+      {view !== "month" && (
+        <div className="grid" style={{ gap: 12 }}>
+          {props.halls
+            .filter((h) => (hallFilter === "all" ? true : h.id === hallFilter))
+            .map((h) => (
+              <div key={h.id} className="card" style={cardStyle}>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <strong style={{ fontSize: 18 }}>{h.name}</strong>
+                  <span className="badge">{fmtDayHuman(anchor)}</span>
+                </div>
+
+                {view === "week" && (
+                  <div className="small muted" style={{ marginTop: 6 }}>
+                    عرض أسبوعي (قائمة)
+                  </div>
+                )}
+
+                <div className="grid" style={{ marginTop: 12 }}>
+                  {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map((d) => (
+                    <div
+                      key={`${h.id}_${d}`}
+                      className="card"
+                      style={{ borderRadius: 16, padding: 12 }}
+                    >
+                      <div className="row" style={{ justifyContent: "space-between" }}>
+                        <strong>{fmtDayHuman(d)}</strong>
+                        <span className="muted small">
+                          {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).toFormat("dd LLL yyyy")}
+                        </span>
+                      </div>
+
+                      <div className="grid" style={{ marginTop: 10, gap: 10 }}>
+                        {props.slots.map((s) => {
+                          const key = `${d}__${h.id}__${s.id}`;
+                          const list = occMap.get(key) || [];
+                          const has = list.length > 0;
+
+                          return (
+                            <div key={s.id} className="card" style={{ borderRadius: 16 }}>
+                              <div className="row" style={{ justifyContent: "space-between" }}>
+                                <strong style={{ fontSize: 18 }}>{s.name}</strong>
+                                <span className="muted small">
+                                  {s.start_time} - {s.end_time}
+                                </span>
+                              </div>
+
+                              {!has && (
+                                <div className="small muted" style={{ marginTop: 6 }}>
+                                  لا توجد حجوزات في هذه الفترة.
+                                </div>
+                              )}
+
+                              {has && (
+                                <div className="grid" style={{ marginTop: 10, gap: 10 }}>
+                                  {list.map((o) => {
+                                    const st = occStatus(o);
+                                    const kind = occType(o);
+                                    const tone = dayToneByStatus([st]);
+                                    const who = o.created_by
+                                      ? creatorNames[o.created_by] || o.created_by
+                                      : "";
+                                    const amt = occAmount(o);
+
+                                    return (
+                                      <div
+                                        key={o.id}
+                                        className="card"
+                                        style={{
+                                          borderRadius: 16,
+                                          background: tone.bg,
+                                          borderColor: tone.border,
+                                        }}
+                                      >
+                                        <div className="row" style={{ justifyContent: "space-between" }}>
+                                          <strong style={{ fontSize: 18 }}>{occTitle(o)}</strong>
+
+                                          <div className="row" style={{ gap: 8 }}>
+                                            <span className="badge">{statusLabel(st)}</span>
+
+                                            <Link
+                                              className="btn"
+                                              href={`/bookings/${o.booking_id}/edit`}
+                                              style={{ padding: "8px 10px", borderRadius: 12 }}
+                                            >
+                                              <span style={{ display: "inline-flex", alignItems: "center" }}>
+                                                <Icon name="edit" />
+                                              </span>
+                                            </Link>
+                                          </div>
+                                        </div>
+
+                                        <div
+                                          className="row"
+                                          style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}
+                                        >
+                                          <span className="badge">{kindLabel(kind)}</span>
+                                          {who ? (
+                                            <span className="badge">أضيف بواسطة: {who}</span>
+                                          ) : null}
+                                          {typeof amt === "number" ? (
+                                            <span className="badge">
+                                              المبلغ: {amt} {o.currency || ""}
+                                            </span>
+                                          ) : null}
+                                        </div>
+
+                                        {(o.client_name || o.client_phone) && (
+                                          <div className="small muted" style={{ marginTop: 10 }}>
+                                            {o.client_name ? `العميل: ${o.client_name}` : ""}
+                                            {o.client_phone ? ` • ${o.client_phone}` : ""}
+                                          </div>
+                                        )}
+
+                                        {o.notes ? (
+                                          <div className="small" style={{ marginTop: 10 }}>
+                                            {o.notes}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
     </div>
   );
 }

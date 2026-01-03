@@ -3,15 +3,12 @@ import { supabaseServer } from "@/lib/supabase/server";
 
 export async function GET(req: Request) {
   const supabase = supabaseServer();
-  await supabase.auth.signOut();
 
-  // رجّع المستخدم للّوقن بدل صفحة فاضية
+  const { error } = await supabase.auth.signOut();
+
+  // نرجّع المستخدم لصفحة الدخول بدل صفحة فاضية
   const url = new URL("/login", req.url);
-  return NextResponse.redirect(url);
-}
+  if (error) url.searchParams.set("signout", "failed");
 
-export async function POST() {
-  const supabase = supabaseServer();
-  await supabase.auth.signOut();
-  return NextResponse.json({ ok: true });
+  return NextResponse.redirect(url);
 }
