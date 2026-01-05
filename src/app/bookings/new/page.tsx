@@ -19,7 +19,7 @@ import {
 const BAHRAIN_TZ = "Asia/Bahrain";
 
 type Hall = { id: number; name: string };
-type Slot = { id: number; name: string; start_time?: string; end_time?: string };
+type Slot = { id: number; code: string; name: string; start_time?: string; end_time?: string };
 
 type BookingType = "death" | "mawlid" | "fatiha" | "wedding" | "special";
 type BookingStatus = "confirmed" | "hold" | "cancelled";
@@ -70,7 +70,8 @@ export default function NewBookingPage() {
   const [cleanDays, setCleanDays] = useState<number>(0);
 
   const [hallIds, setHallIds] = useState<number[]>([]);
-  const [slotIds, setSlotIds] = useState<number[]>([]);
+  // نخزن الأكواد لأن الباك-إند يعتمد على time_slots.code (morning/afternoon/night)
+  const [slotCodes, setSlotCodes] = useState<string[]>([]);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -107,14 +108,16 @@ export default function NewBookingPage() {
     setHallIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  function toggleSlot(id: number) {
+  function toggleSlot(code: string) {
     setServerError("");
     setMissing([]);
-    setSlotIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSlotCodes((prev) =>
+      prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]
+    );
   }
 
   const hallCount = hallIds.length;
-  const slotCount = slotIds.length;
+  const slotCount = slotCodes.length;
 
   const daysOptions = useMemo(() => Array.from({ length: 14 }, (_, i) => i + 1), []);
   const smallOptions = useMemo(() => Array.from({ length: 6 }, (_, i) => i), []);
@@ -129,7 +132,7 @@ export default function NewBookingPage() {
     if (prepDays < 0) miss.push("prep_days");
     if (cleanDays < 0) miss.push("clean_days");
     if (hallIds.length === 0) miss.push("halls");
-    if (slotIds.length === 0) miss.push("slots");
+    if (slotCodes.length === 0) miss.push("slots");
     return miss;
   }
 
@@ -172,8 +175,10 @@ export default function NewBookingPage() {
         hall_ids: hallIds,
         halls: hallIds,
 
-        slot_ids: slotIds,
-        slots: slotIds,
+        // الأفضل: كود الفترات
+        slot_codes: slotCodes,
+        event_slot_codes: slotCodes,
+        slotCodes,
 
         client_name: clientName || null,
         client_phone: clientPhone || null,
@@ -430,12 +435,12 @@ export default function NewBookingPage() {
 
             <div className="grid grid-cols-3 gap-2">
               {slots.map((s) => {
-                const active = slotIds.includes(s.id);
+                const active = slotCodes.includes(String((s as any).code ?? s.id));
                 return (
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => toggleSlot(s.id)}
+                    onClick={() => toggleSlot((s as any).code ?? String(s.id) as any)}
                     className={[
                       "w-full rounded-xl border px-3 py-3 text-sm font-bold transition",
                       "text-center",

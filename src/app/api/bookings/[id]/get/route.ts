@@ -9,6 +9,12 @@ export async function GET(
 ) {
   const supabase = supabaseServer();
 
+  // حماية: لا نرجّع بيانات الحجوزات إلا للمستخدم المسجّل
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) {
+    return NextResponse.json({ error: "UNAUTH" }, { status: 401 });
+  }
+
   const bookingId = Number(params.id);
   if (!Number.isFinite(bookingId)) {
     return NextResponse.json({ error: "BAD_ID" }, { status: 400 });
@@ -45,9 +51,26 @@ export async function GET(
     )
   ).sort((a, b) => a - b);
 
+  // ✅ أكواد الفترات: الأفضل من booking.event_slot_codes، وإذا فاضية حوّلها من slot_id
+  let slot_codes: string[] =
+    Array.isArray((booking as any).event_slot_codes) && (booking as any).event_slot_codes.length
+      ? (booking as any).event_slot_codes
+      : [];
+
+  if (!slot_codes.length && slot_ids.length) {
+    const { data: slotRows } = await supabase
+      .from("time_slots")
+      .select("id,code")
+      .in("id", slot_ids);
+    slot_codes = (slotRows || [])
+      .map((s: any) => String(s.code ?? s.id))
+      .filter(Boolean);
+  }
+
   return NextResponse.json({
     booking,
     hall_ids,
     slot_ids,
+    slot_codes,
   });
 }

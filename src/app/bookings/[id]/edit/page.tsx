@@ -19,7 +19,7 @@ import {
 const BAHRAIN_TZ = "Asia/Bahrain";
 
 type Hall = { id: number; name: string };
-type Slot = { id: number; name: string; start_time?: string; end_time?: string };
+type Slot = { id: number; code: string; name: string; start_time?: string; end_time?: string };
 
 type BookingType = "death" | "mawlid" | "fatiha" | "wedding" | "special";
 type BookingStatus = "confirmed" | "hold" | "cancelled";
@@ -94,7 +94,7 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
   const [cleanDays, setCleanDays] = useState<number>(0);
 
   const [hallIds, setHallIds] = useState<number[]>([]);
-  const [slotIds, setSlotIds] = useState<number[]>([]);
+  const [slotCodes, setSlotCodes] = useState<string[]>([]);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -136,21 +136,29 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
 
         // استخراج مرن (عشان اختلاف أسماء الحقول)
         const t = (b.title ?? b.booking_title ?? b.name ?? "").toString();
-        const d = toISODateMaybe(b.start_date ?? b.start ?? b.start_ts ?? b.date) || "";
+        const d =
+          toISODateMaybe(
+            b.event_start_date ?? b.start_date ?? b.start ?? b.start_ts ?? b.date
+          ) || "";
         const bt = (b.booking_type ?? b.kind ?? b.type ?? "death") as BookingType;
         const bs = (b.booking_status ?? b.status ?? "hold") as BookingStatus;
 
-        const dc = Number(b.days_count ?? b.days ?? b.num_days ?? 1) || 1;
-        const pd = Number(b.prep_days ?? b.before ?? b.setup ?? 0) || 0;
-        const cd = Number(b.clean_days ?? b.after ?? b.cleanup ?? 0) || 0;
+        const dc = Number(b.event_days ?? b.days_count ?? b.days ?? b.num_days ?? 1) || 1;
+        const pd = Number(b.pre_days ?? b.prep_days ?? b.before ?? b.setup ?? 0) || 0;
+        const cd = Number(b.post_days ?? b.clean_days ?? b.after ?? b.cleanup ?? 0) || 0;
 
         // هذي أهم نقطة: halls/slots لازم ترجع كما هي من الحجز
-        const hIds =
-          extractIds(b.hall_ids ?? b.halls, ["id", "hall_id"]) ||
-          extractIds(b.booking_halls, ["hall_id", "id"]);
-        const sIds =
-          extractIds(b.slot_ids ?? b.slots, ["id", "slot_id"]) ||
-          extractIds(b.booking_slots, ["slot_id", "id"]);
+        // من الـ API نرجّع hall_ids و slot_codes جاهزين أعلى مستوى
+        const hIds = Array.isArray(bAny?.hall_ids)
+          ? (bAny.hall_ids as number[])
+          : extractIds(b.hall_ids ?? b.halls, ["id", "hall_id"]) ||
+            extractIds(b.booking_halls, ["hall_id", "id"]);
+
+        const sCodes: string[] = Array.isArray(bAny?.slot_codes)
+          ? (bAny.slot_codes as string[])
+          : Array.isArray((b as any).event_slot_codes)
+            ? ((b as any).event_slot_codes as string[])
+            : [];
 
         const cn = (b.client_name ?? b.customer_name ?? "").toString();
         const cp = (b.client_phone ?? b.customer_phone ?? "").toString();
@@ -165,7 +173,7 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
         setPrepDays(pd);
         setCleanDays(cd);
         setHallIds(Array.isArray(hIds) ? hIds : []);
-        setSlotIds(Array.isArray(sIds) ? sIds : []);
+        setSlotCodes(Array.isArray(sCodes) ? sCodes : []);
         setClientName(cn);
         setClientPhone(cp);
         setAmount(typeof am === "number" ? String(am) : am ? String(am) : "");
@@ -188,10 +196,10 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
     setHallIds((prev) => (prev.includes(hid) ? prev.filter((x) => x !== hid) : [...prev, hid]));
   }
 
-  function toggleSlot(sid: number) {
+  function toggleSlot(code: string) {
     setServerError("");
     setMissing([]);
-    setSlotIds((prev) => (prev.includes(sid) ? prev.filter((x) => x !== sid) : [...prev, sid]));
+    setSlotCodes((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]));
   }
 
   function validate() {
@@ -204,7 +212,7 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
     if (prepDays < 0) miss.push("prep_days");
     if (cleanDays < 0) miss.push("clean_days");
     if (hallIds.length === 0) miss.push("halls");
-    if (slotIds.length === 0) miss.push("slots");
+    if (slotCodes.length === 0) miss.push("slots");
     return miss;
   }
 
@@ -249,8 +257,10 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
         hall_ids: hallIds,
         halls: hallIds,
 
-        slot_ids: slotIds,
-        slots: slotIds,
+        // الأفضل: كود الفترات
+        slot_codes: slotCodes,
+        event_slot_codes: slotCodes,
+        slotCodes,
 
         client_name: clientName || null,
         client_phone: clientPhone || null,
@@ -494,17 +504,18 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-right">اختر الفترات</div>
-              <div className="text-xs text-muted-foreground">محددة: {slotIds.length}</div>
+              <div className="text-xs text-muted-foreground">محددة: {slotCodes.length}</div>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
               {slots.map((s) => {
-                const active = slotIds.includes(s.id);
+                const code = String((s as any).code ?? s.id);
+                const active = slotCodes.includes(code);
                 return (
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => toggleSlot(s.id)}
+                    onClick={() => toggleSlot(code)}
                     className={[
                       "w-full rounded-xl border px-3 py-3 text-sm font-bold transition",
                       "text-center",
