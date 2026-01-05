@@ -19,7 +19,7 @@ import {
 const BAHRAIN_TZ = "Asia/Bahrain";
 
 type Hall = { id: number; name: string };
-type Slot = { id: number; code: string; name: string; start_time?: string; end_time?: string };
+type Slot = { id: number; name: string; start_time?: string; end_time?: string };
 
 type BookingType = "death" | "mawlid" | "fatiha" | "wedding" | "special";
 type BookingStatus = "confirmed" | "hold" | "cancelled";
@@ -70,8 +70,7 @@ export default function NewBookingPage() {
   const [cleanDays, setCleanDays] = useState<number>(0);
 
   const [hallIds, setHallIds] = useState<number[]>([]);
-  // نخزن الأكواد لأن الباك-إند يعتمد على time_slots.code (morning/afternoon/night)
-  const [slotCodes, setSlotCodes] = useState<string[]>([]);
+  const [slotIds, setSlotIds] = useState<number[]>([]);
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -108,16 +107,14 @@ export default function NewBookingPage() {
     setHallIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  function toggleSlot(code: string) {
+  function toggleSlot(id: number) {
     setServerError("");
     setMissing([]);
-    setSlotCodes((prev) =>
-      prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]
-    );
+    setSlotIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   const hallCount = hallIds.length;
-  const slotCount = slotCodes.length;
+  const slotCount = slotIds.length;
 
   const daysOptions = useMemo(() => Array.from({ length: 14 }, (_, i) => i + 1), []);
   const smallOptions = useMemo(() => Array.from({ length: 6 }, (_, i) => i), []);
@@ -132,7 +129,7 @@ export default function NewBookingPage() {
     if (prepDays < 0) miss.push("prep_days");
     if (cleanDays < 0) miss.push("clean_days");
     if (hallIds.length === 0) miss.push("halls");
-    if (slotCodes.length === 0) miss.push("slots");
+    if (slotIds.length === 0) miss.push("slots");
     return miss;
   }
 
@@ -149,6 +146,15 @@ export default function NewBookingPage() {
         title,
         booking_title: title,
 
+        // ✅ أسماء الحقول المطابقة للداتا بيس (والـ API)
+        event_start_date: startDate,
+        event_days: daysCount,
+        pre_days: prepDays,
+        post_days: cleanDays,
+        hall_ids: hallIds,
+        slot_ids: slotIds,
+        status: bookingStatus,
+
         start_date: startDate,
         start: startDate,
         date: startDate,
@@ -158,7 +164,8 @@ export default function NewBookingPage() {
         type: bookingType,
 
         booking_status: bookingStatus,
-        status: bookingStatus,
+        // status مكرر فوق، لكن نخليه للمرونة
+        bookingStatus: bookingStatus,
 
         days_count: daysCount,
         days: daysCount,
@@ -172,13 +179,10 @@ export default function NewBookingPage() {
         after: cleanDays,
         cleanup: cleanDays,
 
-        hall_ids: hallIds,
+        
         halls: hallIds,
 
-        // الأفضل: كود الفترات
-        slot_codes: slotCodes,
-        event_slot_codes: slotCodes,
-        slotCodes,
+        slots: slotIds,
 
         client_name: clientName || null,
         client_phone: clientPhone || null,
@@ -435,12 +439,12 @@ export default function NewBookingPage() {
 
             <div className="grid grid-cols-3 gap-2">
               {slots.map((s) => {
-                const active = slotCodes.includes(String((s as any).code ?? s.id));
+                const active = slotIds.includes(s.id);
                 return (
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => toggleSlot((s as any).code ?? String(s.id) as any)}
+                    onClick={() => toggleSlot(s.id)}
                     className={[
                       "w-full rounded-xl border px-3 py-3 text-sm font-bold transition",
                       "text-center",
