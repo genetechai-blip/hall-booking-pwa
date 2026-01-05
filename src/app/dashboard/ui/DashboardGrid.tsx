@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { DateTime } from "luxon";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -251,9 +252,24 @@ function StatusMiniIcon({ st }: { st: BookingStatus }) {
 
 export default function DashboardGrid(props: Props) {
   const supabase = useMemo(() => supabaseBrowser(), []);
+  const router = useRouter();
   const [view, setView] = useState<ViewMode>("month");
   const [anchor, setAnchor] = useState<string>(props.anchorDate || isoToday());
   const [hallFilter, setHallFilter] = useState<number | "all">("all");
+
+  // لو تغيّر التاريخ عبر URL (مثلاً عند التنقل بين الشهور) نزامن الـ state
+  useEffect(() => {
+    if (props.anchorDate && props.anchorDate !== anchor) {
+      setAnchor(props.anchorDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.anchorDate]);
+
+  // ✅ أي تغيير للشهر/التاريخ لازم يحدّث URL عشان السيرفر يعيد جلب البيانات لنفس الشهر
+  function goToDate(nextISO: string) {
+    // نستخدم replace عشان ما تتكدّس الـ history
+    router.replace(`/dashboard?date=${nextISO}`);
+  }
 
   const [myName, setMyName] = useState<string>("");
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
@@ -337,27 +353,27 @@ export default function DashboardGrid(props: Props) {
   }, [occFiltered]);
 
   function navPrev() {
-    if (view === "day") setAnchor(addDays(anchor, -1));
-    else if (view === "week") setAnchor(addDays(anchor, -7));
-    else
-      setAnchor(
-        DateTime.fromISO(anchor, { zone: BAHRAIN_TZ })
-          .minus({ months: 1 })
-          .toISODate()!
-      );
+    if (view === "day") goToDate(addDays(anchor, -1));
+    else if (view === "week") goToDate(addDays(anchor, -7));
+    else {
+      const next = DateTime.fromISO(anchor, { zone: BAHRAIN_TZ })
+        .minus({ months: 1 })
+        .toISODate()!;
+      goToDate(next);
+    }
   }
   function navNext() {
-    if (view === "day") setAnchor(addDays(anchor, 1));
-    else if (view === "week") setAnchor(addDays(anchor, 7));
-    else
-      setAnchor(
-        DateTime.fromISO(anchor, { zone: BAHRAIN_TZ })
-          .plus({ months: 1 })
-          .toISODate()!
-      );
+    if (view === "day") goToDate(addDays(anchor, 1));
+    else if (view === "week") goToDate(addDays(anchor, 7));
+    else {
+      const next = DateTime.fromISO(anchor, { zone: BAHRAIN_TZ })
+        .plus({ months: 1 })
+        .toISODate()!;
+      goToDate(next);
+    }
   }
   function navToday() {
-    setAnchor(isoToday());
+    goToDate(isoToday());
   }
 
   const viewDays = useMemo(() => {
@@ -460,7 +476,7 @@ export default function DashboardGrid(props: Props) {
                     dir="ltr"
                     type="date"
                     value={anchor}
-                    onChange={(e) => setAnchor(e.target.value)}
+                    onChange={(e) => goToDate(e.target.value)}
                     className="block w-full max-w-full min-w-0 rounded-xl text-center"
                   />
                 </div>
