@@ -3,13 +3,13 @@ import ExcelJS from "exceljs";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function s(v: any) {
   return v === null || v === undefined ? "" : String(v);
 }
 
 function isISODate(v: string) {
-  // YYYY-MM-DD بسيط
   return /^\d{4}-\d{2}-\d{2}$/.test(v);
 }
 
@@ -21,7 +21,6 @@ export async function GET(req: Request) {
   const hallId = url.searchParams.get("hall_id"); // optional
 
   // normalize dates:
-  // - لو واحد موجود والثاني لا: نخليهم نفس اليوم
   if (from && !to) to = from;
   if (to && !from) from = to;
 
@@ -34,12 +33,7 @@ export async function GET(req: Request) {
 
   const hallNum = hallId ? Number(hallId) : null;
   if (hallId) {
-    if (
-      hallNum === null ||
-      Number.isNaN(hallNum) ||
-      !Number.isFinite(hallNum) ||
-      hallNum <= 0
-    ) {
+    if (!Number.isFinite(hallNum) || (hallNum as number) <= 0) {
       return NextResponse.json({ error: "Invalid hall_id" }, { status: 400 });
     }
   }
@@ -70,7 +64,7 @@ export async function GET(req: Request) {
 
   // Halls map (for names)
   let hallsQuery = supabase.from("halls").select("id, name").order("id");
-  if (hallNum) hallsQuery = hallsQuery.eq("id", hallNum);
+  if (hallNum !== null) hallsQuery = hallsQuery.eq("id", hallNum);
 
   const { data: halls, error: hallsErr } = await hallsQuery;
   if (hallsErr) {
@@ -92,13 +86,11 @@ export async function GET(req: Request) {
     `)
     .order("event_start_date", { ascending: true });
 
-  // optional date filter
   if (from && to) {
     q = q.gte("event_start_date", from).lte("event_start_date", to);
   }
 
-  // optional hall filter (hall_ids is int8[])
-  if (hallNum) {
+  if (hallNum !== null) {
     q = q.contains("hall_ids", [hallNum]);
   }
 
@@ -135,34 +127,36 @@ export async function GET(req: Request) {
 
   for (const b of bookings ?? []) {
     const hallNames =
-      Array.isArray(b.hall_ids)
-        ? b.hall_ids.map((id: number) => hallMap.get(id) ?? String(id)).join("، ")
-        : s(b.hall_ids);
+      Array.isArray((b as any).hall_ids)
+        ? (b as any).hall_ids
+            .map((id: number) => hallMap.get(id) ?? String(id))
+            .join("، ")
+        : s((b as any).hall_ids);
 
     const slotCodes =
-      Array.isArray(b.event_slot_codes)
-        ? b.event_slot_codes.join(", ")
-        : s(b.event_slot_codes);
+      Array.isArray((b as any).event_slot_codes)
+        ? (b as any).event_slot_codes.join(", ")
+        : s((b as any).event_slot_codes);
 
     ws.addRow({
-      id: b.id,
-      title: s(b.title),
-      booking_type: s(b.booking_type),
-      status: s(b.status),
-      client_name: s(b.client_name),
-      client_phone: s(b.client_phone),
-      event_start_date: s(b.event_start_date),
-      event_days: b.event_days ?? "",
-      pre_days: b.pre_days ?? "",
-      post_days: b.post_days ?? "",
+      id: (b as any).id,
+      title: s((b as any).title),
+      booking_type: s((b as any).booking_type),
+      status: s((b as any).status),
+      client_name: s((b as any).client_name),
+      client_phone: s((b as any).client_phone),
+      event_start_date: s((b as any).event_start_date),
+      event_days: (b as any).event_days ?? "",
+      pre_days: (b as any).pre_days ?? "",
+      post_days: (b as any).post_days ?? "",
       halls: hallNames,
       slots: slotCodes,
-      payment_status: s(b.payment_status),
-      payment_amount: b.payment_amount ?? "",
-      currency: s(b.currency),
-      notes: s(b.notes),
-      created_at: s(b.created_at),
-      updated_at: s(b.updated_at),
+      payment_status: s((b as any).payment_status),
+      payment_amount: (b as any).payment_amount ?? "",
+      currency: s((b as any).currency),
+      notes: s((b as any).notes),
+      created_at: s((b as any).created_at),
+      updated_at: s((b as any).updated_at),
     });
   }
 
@@ -179,6 +173,7 @@ export async function GET(req: Request) {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "no-store",
     },
   });
 }
