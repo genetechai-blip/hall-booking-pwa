@@ -33,7 +33,6 @@ export default function ExportPage() {
     try {
       const params = new URLSearchParams();
 
-      // ✅ بدون فلتر = لا نرسل شي
       if (from || to) {
         const a = from || to || today;
         const b = to || from || today;
@@ -55,8 +54,7 @@ export default function ExportPage() {
       const blob = await res.blob();
       const fileUrl = URL.createObjectURL(blob);
 
-      const rangePart =
-        from || to ? `${from || to}_${to || from}` : "ALL";
+      const rangePart = from || to ? `${from || to}_${to || from}` : "ALL";
       const fileName = `bookings_${hallId || "all"}_${sanitizeFilePart(rangePart)}.xlsx`;
 
       const a = document.createElement("a");
@@ -79,9 +77,23 @@ export default function ExportPage() {
   return (
     <div className="mx-auto max-w-xl px-4 pt-6 pb-14">
       <div className="rounded-2xl border bg-white p-4">
-        <div className="text-2xl font-extrabold text-right">تصدير الحجوزات</div>
-        <div className="text-sm text-muted-foreground text-right mt-1">
-          اترك الفلاتر فاضية لتصدير كل الحجوزات.
+        {/* ✅ Header: رجوع فوق يسار + عنوان يمين */}
+        <div className="flex items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => history.back()}
+            className="shrink-0 rounded-xl border px-4 py-2 text-sm font-bold hover:bg-muted"
+            aria-label="رجوع"
+          >
+            رجوع
+          </button>
+
+          <div className="min-w-0 text-right">
+            <div className="text-2xl font-extrabold">تصدير الحجوزات</div>
+            <div className="text-sm text-muted-foreground mt-1">
+              اترك الفلاتر فاضية لتصدير كل الحجوزات.
+            </div>
+          </div>
         </div>
 
         <div className="mt-4 grid gap-3">
@@ -121,21 +133,12 @@ export default function ExportPage() {
           <button
             onClick={downloadExcel}
             disabled={downloading}
-            className="rounded-xl border px-4 py-3 font-bold"
+            className="rounded-xl border px-4 py-3 font-bold hover:bg-muted"
           >
             {downloading ? "..." : "تنزيل Excel"}
           </button>
 
-          {msg ? (
-            <div className="text-sm text-right mt-1">{msg}</div>
-          ) : null}
-
-          <button
-            onClick={() => history.back()}
-            className="rounded-xl px-4 py-2 text-sm text-muted-foreground"
-          >
-            رجوع
-          </button>
+          {msg ? <div className="text-sm text-right mt-1">{msg}</div> : null}
         </div>
       </div>
     </div>
