@@ -374,7 +374,9 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
                 <SelectItem value="mawlid">مولد</SelectItem>
                 <SelectItem value="fatiha">فاتحة</SelectItem>
                 <SelectItem value="wedding">زواج</SelectItem>
+                <SelectItem value="event">فعالية</SelectItem>
                 <SelectItem value="special">خاصة</SelectItem>
+                
               </SelectContent>
             </Select>
           </div>
