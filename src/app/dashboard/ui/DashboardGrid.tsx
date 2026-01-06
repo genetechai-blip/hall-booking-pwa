@@ -487,14 +487,8 @@ export default function DashboardGrid(props: Props) {
                   <DropdownMenuItem asChild>
                     <Link href="/bookings/new">إضافة حجز</Link>
                   </DropdownMenuItem>
-
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      exportExcelRange();
-                    }}
-                  >
-                    تصدير Excel
+                  <DropdownMenuItem asChild>
+                    <Link href="/export">تصدير الحجوزات</Link>
                   </DropdownMenuItem>
 
                   <DropdownMenuItem asChild>

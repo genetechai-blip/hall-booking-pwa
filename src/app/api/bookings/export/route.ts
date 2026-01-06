@@ -2,34 +2,47 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { supabaseServer } from "@/lib/supabase/server";
 
-export const runtime = "nodejs"; // مهم لـ exceljs على Vercel
+export const runtime = "nodejs";
 
 function s(v: any) {
   return v === null || v === undefined ? "" : String(v);
 }
 
+function isISODate(v: string) {
+  // YYYY-MM-DD بسيط
+  return /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
 
-  const from = url.searchParams.get("from"); // YYYY-MM-DD
-  const to = url.searchParams.get("to");     // YYYY-MM-DD
+  let from = url.searchParams.get("from"); // optional
+  let to = url.searchParams.get("to");     // optional
   const hallId = url.searchParams.get("hall_id"); // optional
 
-  if (!from || !to) {
-    return NextResponse.json(
-      { error: "from and to are required (YYYY-MM-DD)" },
-      { status: 400 }
-    );
+  // normalize dates:
+  // - لو واحد موجود والثاني لا: نخليهم نفس اليوم
+  if (from && !to) to = from;
+  if (to && !from) from = to;
+
+  if (from && !isISODate(from)) {
+    return NextResponse.json({ error: "Invalid from date" }, { status: 400 });
+  }
+  if (to && !isISODate(to)) {
+    return NextResponse.json({ error: "Invalid to date" }, { status: 400 });
   }
 
   const hallNum = hallId ? Number(hallId) : null;
-
-if (hallId) {
-  if (hallNum === null || Number.isNaN(hallNum) || !Number.isFinite(hallNum) || hallNum <= 0) {
-    return NextResponse.json({ error: "Invalid hall_id" }, { status: 400 });
+  if (hallId) {
+    if (
+      hallNum === null ||
+      Number.isNaN(hallNum) ||
+      !Number.isFinite(hallNum) ||
+      hallNum <= 0
+    ) {
+      return NextResponse.json({ error: "Invalid hall_id" }, { status: 400 });
+    }
   }
-}
-
 
   const supabase = supabaseServer();
 
@@ -40,7 +53,7 @@ if (hallId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Role check (حسب جدول profiles عندك)
+  // Role check
   const { data: profile, error: profErr } = await supabase
     .from("profiles")
     .select("role, active")
@@ -55,7 +68,7 @@ if (hallId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // جلب الصالات (لعرض الاسم داخل Excel)
+  // Halls map (for names)
   let hallsQuery = supabase.from("halls").select("id, name").order("id");
   if (hallNum) hallsQuery = hallsQuery.eq("id", hallNum);
 
@@ -67,7 +80,7 @@ if (hallId) {
   const hallMap = new Map<number, string>();
   (halls ?? []).forEach((h: any) => hallMap.set(h.id, h.name));
 
-  // جلب الحجوزات ضمن نطاق التاريخ + (اختياري) فلتر صالة
+  // Bookings query
   let q = supabase
     .from("bookings")
     .select(`
@@ -77,11 +90,14 @@ if (hallId) {
       booking_type, hall_ids, event_slot_codes,
       created_at, updated_at
     `)
-    .gte("event_start_date", from)
-    .lte("event_start_date", to)
     .order("event_start_date", { ascending: true });
 
-  // ✅ فلتر الصالة على مستوى DB (hall_ids is int8[])
+  // optional date filter
+  if (from && to) {
+    q = q.gte("event_start_date", from).lte("event_start_date", to);
+  }
+
+  // optional hall filter (hall_ids is int8[])
   if (hallNum) {
     q = q.contains("hall_ids", [hallNum]);
   }
@@ -91,7 +107,7 @@ if (hallId) {
     return NextResponse.json({ error: bErr.message }, { status: 500 });
   }
 
-  // إنشاء ملف Excel
+  // Excel
   const wb = new ExcelJS.Workbook();
   wb.creator = "Hall Booking PWA";
   const ws = wb.addWorksheet("Bookings");
@@ -120,9 +136,7 @@ if (hallId) {
   for (const b of bookings ?? []) {
     const hallNames =
       Array.isArray(b.hall_ids)
-        ? b.hall_ids
-            .map((id: number) => hallMap.get(id) ?? String(id))
-            .join("، ")
+        ? b.hall_ids.map((id: number) => hallMap.get(id) ?? String(id)).join("، ")
         : s(b.hall_ids);
 
     const slotCodes =
@@ -155,7 +169,9 @@ if (hallId) {
   ws.getRow(1).font = { bold: true };
 
   const buffer = await wb.xlsx.writeBuffer();
-  const filename = `bookings_${hallNum ?? "all"}_${from}_${to}.xlsx`;
+
+  const rangePart = from && to ? `${from}_${to}` : "ALL";
+  const filename = `bookings_${hallNum ?? "all"}_${rangePart}.xlsx`;
 
   return new NextResponse(Buffer.from(buffer), {
     status: 200,
