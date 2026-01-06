@@ -104,6 +104,8 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
   const [saving, setSaving] = useState(false);
   const [missing, setMissing] = useState<string[]>([]);
   const [serverError, setServerError] = useState<string>("");
+  const [deleting, setDeleting] = useState(false);
+
 
   const daysOptions = useMemo(() => Array.from({ length: 14 }, (_, i) => i + 1), []);
   const smallOptions = useMemo(() => Array.from({ length: 6 }, (_, i) => i), []);
@@ -210,6 +212,28 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
     if (slotIds.length === 0) miss.push("slots");
     return miss;
   }
+
+  async function onDelete() {
+  const ok = confirm("تأكيد حذف الحجز نهائياً؟ هذا سيحذف كل التفاصيل ولا يمكن التراجع.");
+  if (!ok) return;
+
+  setDeleting(true);
+  setServerError("");
+  try {
+    const res = await fetch(`/api/bookings/${id}/delete`, { method: "POST" });
+    if (!res.ok) {
+      const txt = await res.text();
+      setServerError(txt || "فشل حذف الحجز.");
+      return;
+    }
+    router.push("/dashboard");
+  } catch {
+    setServerError("صار خطأ غير متوقع أثناء الحذف.");
+  } finally {
+    setDeleting(false);
+  }
+}
+
 
   async function onSubmit() {
     setServerError("");
@@ -597,7 +621,7 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
           <div className="flex gap-2">
             <Button
               onClick={onSubmit}
-              disabled={saving || loading}
+              disabled={saving || loading || deleting}
               className="rounded-xl flex-1"
             >
               {saving ? "..." : "حفظ"}
@@ -606,11 +630,22 @@ export default function EditBookingPage({ params }: { params: { id: string } }) 
             <Button
               variant="outline"
               onClick={() => router.push("/dashboard")}
+              disabled={saving || loading || deleting}
               className="rounded-xl"
             >
               إلغاء
             </Button>
-          </div>
+
+            <Button
+              variant="destructive"
+              onClick={onDelete}
+              disabled={saving || loading || deleting}
+              className="rounded-xl"
+            >
+              {deleting ? "..." : "حذف"}
+  </Button>
+</div>
+
         </CardContent>
       </Card>
     </div>
