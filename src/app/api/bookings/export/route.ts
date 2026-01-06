@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import { supabaseServer } from "@/lib/supabase/server"; // <-- نفس ملفك server.ts
+import { supabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs"; // مهم لـ exceljs على Vercel
 
@@ -10,8 +10,26 @@ function s(v: any) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+
   const from = url.searchParams.get("from"); // YYYY-MM-DD
   const to = url.searchParams.get("to");     // YYYY-MM-DD
+  const hallId = url.searchParams.get("hall_id"); // optional
+
+  if (!from || !to) {
+    return NextResponse.json(
+      { error: "from and to are required (YYYY-MM-DD)" },
+      { status: 400 }
+    );
+  }
+
+  const hallNum = hallId ? Number(hallId) : null;
+
+if (hallId) {
+  if (hallNum === null || Number.isNaN(hallNum) || !Number.isFinite(hallNum) || hallNum <= 0) {
+    return NextResponse.json({ error: "Invalid hall_id" }, { status: 400 });
+  }
+}
+
 
   const supabase = supabaseServer();
 
@@ -22,7 +40,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Role check (اختياري لكنه ممتاز للأمان)
+  // Role check (حسب جدول profiles عندك)
   const { data: profile, error: profErr } = await supabase
     .from("profiles")
     .select("role, active")
@@ -32,46 +50,48 @@ export async function GET(req: Request) {
   if (profErr) {
     return NextResponse.json({ error: profErr.message }, { status: 500 });
   }
+
   if (!profile?.active || !["admin", "staff"].includes(profile.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // هذي خريطة أسماء الصالات بدل الأرقام
-  const { data: halls, error: hallsErr } = await supabase
-    .from("halls")
-    .select("id, name")
-    .order("id");
+  // جلب الصالات (لعرض الاسم داخل Excel)
+  let hallsQuery = supabase.from("halls").select("id, name").order("id");
+  if (hallNum) hallsQuery = hallsQuery.eq("id", hallNum);
 
+  const { data: halls, error: hallsErr } = await hallsQuery;
   if (hallsErr) {
     return NextResponse.json({ error: hallsErr.message }, { status: 500 });
   }
 
   const hallMap = new Map<number, string>();
-  (halls ?? []).forEach((h) => hallMap.set(h.id, h.name));
+  (halls ?? []).forEach((h: any) => hallMap.set(h.id, h.name));
 
-  // جلب الحجوزات
+  // جلب الحجوزات ضمن نطاق التاريخ + (اختياري) فلتر صالة
   let q = supabase
     .from("bookings")
-    .select(
-      `
+    .select(`
       id, title, client_name, client_phone, notes,
       status, payment_status, payment_amount, currency,
       event_start_date, event_days, pre_days, post_days,
       booking_type, hall_ids, event_slot_codes,
       created_at, updated_at
-      `
-    )
+    `)
+    .gte("event_start_date", from)
+    .lte("event_start_date", to)
     .order("event_start_date", { ascending: true });
 
-  if (from) q = q.gte("event_start_date", from);
-  if (to) q = q.lte("event_start_date", to);
+  // ✅ فلتر الصالة على مستوى DB (hall_ids is int8[])
+  if (hallNum) {
+    q = q.contains("hall_ids", [hallNum]);
+  }
 
   const { data: bookings, error: bErr } = await q;
   if (bErr) {
     return NextResponse.json({ error: bErr.message }, { status: 500 });
   }
 
-  // Excel
+  // إنشاء ملف Excel
   const wb = new ExcelJS.Workbook();
   wb.creator = "Hall Booking PWA";
   const ws = wb.addWorksheet("Bookings");
@@ -87,7 +107,7 @@ export async function GET(req: Request) {
     { header: "Event Days", key: "event_days", width: 10 },
     { header: "Prep Days", key: "pre_days", width: 10 },
     { header: "Cleanup Days", key: "post_days", width: 12 },
-    { header: "Halls", key: "halls", width: 26 },
+    { header: "Halls", key: "halls", width: 30 },
     { header: "Slots", key: "slots", width: 22 },
     { header: "Payment Status", key: "payment_status", width: 14 },
     { header: "Payment Amount", key: "payment_amount", width: 14 },
@@ -100,11 +120,15 @@ export async function GET(req: Request) {
   for (const b of bookings ?? []) {
     const hallNames =
       Array.isArray(b.hall_ids)
-        ? b.hall_ids.map((id: number) => hallMap.get(id) ?? String(id)).join("، ")
+        ? b.hall_ids
+            .map((id: number) => hallMap.get(id) ?? String(id))
+            .join("، ")
         : s(b.hall_ids);
 
     const slotCodes =
-      Array.isArray(b.event_slot_codes) ? b.event_slot_codes.join(", ") : s(b.event_slot_codes);
+      Array.isArray(b.event_slot_codes)
+        ? b.event_slot_codes.join(", ")
+        : s(b.event_slot_codes);
 
     ws.addRow({
       id: b.id,
@@ -131,12 +155,13 @@ export async function GET(req: Request) {
   ws.getRow(1).font = { bold: true };
 
   const buffer = await wb.xlsx.writeBuffer();
-  const filename = `bookings_${from ?? "all"}_${to ?? "all"}.xlsx`;
+  const filename = `bookings_${hallNum ?? "all"}_${from}_${to}.xlsx`;
 
   return new NextResponse(Buffer.from(buffer), {
     status: 200,
     headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });

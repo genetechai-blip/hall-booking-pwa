@@ -250,12 +250,24 @@ function StatusMiniIcon({ st }: { st: BookingStatus }) {
   );
 }
 
+function sanitizeFilePart(x: string) {
+  return x
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .slice(0, 50);
+}
+
 export default function DashboardGrid(props: Props) {
   const supabase = useMemo(() => supabaseBrowser(), []);
   const router = useRouter();
   const [view, setView] = useState<ViewMode>("month");
   const [anchor, setAnchor] = useState<string>(props.anchorDate || isoToday());
   const [hallFilter, setHallFilter] = useState<number | "all">("all");
+
+  // ✅ export controls (من / إلى)
+  const [exportFrom, setExportFrom] = useState<string>(props.anchorDate || isoToday());
+  const [exportTo, setExportTo] = useState<string>(props.anchorDate || isoToday());
 
   // لو تغيّر التاريخ عبر URL (مثلاً عند التنقل بين الشهور) نزامن الـ state
   useEffect(() => {
@@ -267,8 +279,46 @@ export default function DashboardGrid(props: Props) {
 
   // ✅ أي تغيير للشهر/التاريخ لازم يحدّث URL عشان السيرفر يعيد جلب البيانات لنفس الشهر
   function goToDate(nextISO: string) {
-    // نستخدم replace عشان ما تتكدّس الـ history
     router.replace(`/dashboard?date=${nextISO}`);
+  }
+
+  async function exportExcelRange() {
+    if (!exportFrom || !exportTo) {
+      alert("حدد تاريخ من وإلى");
+      return;
+    }
+
+    // تأكد ترتيب من/إلى
+    const a = DateTime.fromISO(exportFrom, { zone: BAHRAIN_TZ });
+    const b = DateTime.fromISO(exportTo, { zone: BAHRAIN_TZ });
+    const from = (a <= b ? a : b).toISODate()!;
+    const to = (a <= b ? b : a).toISODate()!;
+
+    const hallParam = hallFilter === "all" ? "" : `&hall_id=${hallFilter}`;
+
+    const res = await fetch(`/api/bookings/export?from=${from}&to=${to}${hallParam}`);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      alert(j?.error ?? "فشل التصدير");
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    const hallName =
+      hallFilter === "all"
+        ? "all"
+        : (props.halls.find((h) => h.id === hallFilter)?.name ?? `hall_${hallFilter}`);
+
+    const aTag = document.createElement("a");
+    aTag.href = url;
+    aTag.download = `bookings_${sanitizeFilePart(hallName)}_${from}_${to}.xlsx`;
+    document.body.appendChild(aTag);
+    aTag.click();
+    aTag.remove();
+
+    URL.revokeObjectURL(url);
   }
 
   const [myName, setMyName] = useState<string>("");
@@ -437,6 +487,16 @@ export default function DashboardGrid(props: Props) {
                   <DropdownMenuItem asChild>
                     <Link href="/bookings/new">إضافة حجز</Link>
                   </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      exportExcelRange();
+                    }}
+                  >
+                    تصدير Excel
+                  </DropdownMenuItem>
+
                   <DropdownMenuItem asChild>
                     <Link href="/settings">الإعدادات</Link>
                   </DropdownMenuItem>
@@ -465,7 +525,8 @@ export default function DashboardGrid(props: Props) {
               </TabsList>
             </Tabs>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/* ✅ صارت 4 أعمدة (نفس التصميم تقريبًا، مع عمود إضافي للتصدير) */}
+            <div className="grid gap-3 sm:grid-cols-4">
               <div className="min-w-0 w-full">
                 <div className="text-sm font-semibold mb-1 text-right">
                   اختر تاريخ
@@ -504,7 +565,40 @@ export default function DashboardGrid(props: Props) {
                 </Select>
               </div>
 
-              <div className="flex items-end gap-2">
+              {/* ✅ تصدير من/إلى + زر */}
+              <div className="min-w-0 sm:col-span-2">
+                <div className="text-sm font-semibold mb-1 text-right">
+                  تصدير (من / إلى)
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    dir="ltr"
+                    type="date"
+                    value={exportFrom}
+                    onChange={(e) => setExportFrom(e.target.value)}
+                    className="rounded-xl text-center"
+                  />
+                  <Input
+                    dir="ltr"
+                    type="date"
+                    value={exportTo}
+                    onChange={(e) => setExportTo(e.target.value)}
+                    className="rounded-xl text-center"
+                  />
+                </div>
+
+                <Button
+                  onClick={exportExcelRange}
+                  className="rounded-xl w-full mt-2"
+                  variant="outline"
+                >
+                  تصدير Excel
+                </Button>
+              </div>
+
+              {/* Navigation buttons (تحت في الموبايل، وعلى نفس السطر في الديسكتوب حسب المساحة) */}
+              <div className="flex items-end gap-2 sm:col-span-4">
                 <Button
                   variant="outline"
                   className="rounded-xl flex-1"
@@ -615,8 +709,6 @@ export default function DashboardGrid(props: Props) {
                             title={label}
                           >
                             <span className="sm:hidden">{short}</span>
-
-                            {/* ✅ شاشات أكبر: الكلمة كاملة (قد تُقص بالـ truncate فقط هنا) */}
                             <span className="hidden sm:inline truncate max-w-[72px]">
                               {label}
                             </span>
@@ -708,18 +800,23 @@ export default function DashboardGrid(props: Props) {
                                           : "";
                                         const amt = occAmount(o);
 
-                                        // ✅ العميل + المبلغ بنفس السطر (بدون كلمة "المبلغ")
                                         const clientLineParts: string[] = [];
-                                        if (o.client_name) clientLineParts.push(o.client_name);
-                                        else if (o.client_phone) clientLineParts.push(o.client_phone);
+                                        if (o.client_name)
+                                          clientLineParts.push(o.client_name);
+                                        else if (o.client_phone)
+                                          clientLineParts.push(o.client_phone);
 
                                         const clientLine =
                                           clientLineParts.length > 0
-                                            ? `العميل: ${clientLineParts.join(" ")}`
+                                            ? `العميل: ${clientLineParts.join(
+                                                " "
+                                              )}`
                                             : "";
 
                                         const amountPart =
-                                          typeof amt === "number" ? ` - ${amt} د.ب` : "";
+                                          typeof amt === "number"
+                                            ? ` - ${amt} د.ب`
+                                            : "";
 
                                         return (
                                           <div
@@ -727,7 +824,7 @@ export default function DashboardGrid(props: Props) {
                                             className={[
                                               "rounded-2xl border ring-1",
                                               "w-full max-w-full overflow-hidden",
-                                              "p-2.5", // ✅ أقل padding
+                                              "p-2.5",
                                               tone.bg,
                                               tone.border,
                                               tone.ring,
@@ -735,7 +832,6 @@ export default function DashboardGrid(props: Props) {
                                           >
                                             <div className="flex items-start justify-between gap-2">
                                               <div className="min-w-0 flex-1">
-                                                {/* ✅ العنوان + أيقونة الحالة الصغيرة */}
                                                 <div className="flex items-start gap-2 min-w-0">
                                                   <div className="font-extrabold text-[15px] leading-snug truncate min-w-0">
                                                     {occTitle(o)}
@@ -745,7 +841,6 @@ export default function DashboardGrid(props: Props) {
                                                   </div>
                                                 </div>
 
-                                                {/* ✅ سطر العميل + المبلغ */}
                                                 {(clientLine || amountPart) && (
                                                   <div className="text-xs text-muted-foreground mt-0.5 break-words">
                                                     {clientLine}
@@ -753,7 +848,6 @@ export default function DashboardGrid(props: Props) {
                                                   </div>
                                                 )}
 
-                                                {/* ✅ سطر النوع + بواسطة */}
                                                 <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                                                   <span className="inline-flex items-center rounded-full bg-white/60 border px-2 py-0.5 font-bold">
                                                     {kindLabel(kind)}
@@ -765,7 +859,8 @@ export default function DashboardGrid(props: Props) {
                                                     </span>
                                                   ) : null}
 
-                                                  {o.client_phone && !o.client_name ? (
+                                                  {o.client_phone &&
+                                                  !o.client_name ? (
                                                     <span className="text-muted-foreground">
                                                       • {o.client_phone}
                                                     </span>
@@ -779,7 +874,6 @@ export default function DashboardGrid(props: Props) {
                                                 ) : null}
                                               </div>
 
-                                              {/* ✅ زر تعديل صغير */}
                                               <Button
                                                 asChild
                                                 size="icon"
