@@ -81,17 +81,6 @@ function kindShortLabel(kind: BookingType | null | undefined) {
   }
 }
 
-function statusLabel(st: BookingStatus) {
-  switch (st) {
-    case "confirmed":
-      return "مؤكد";
-    case "hold":
-      return "مبدئي";
-    case "cancelled":
-      return "ملغي";
-  }
-}
-
 function occDayISO(o: DashboardOccurrence) {
   return DateTime.fromISO(o.start_ts).setZone(BAHRAIN_TZ).toISODate()!;
 }
@@ -228,7 +217,6 @@ function IconX({ className = "h-4 w-4" }: { className?: string }) {
 }
 
 function StatusMiniIcon({ st }: { st: BookingStatus }) {
-  // أيقونة صغيرة بجانب العنوان
   const common =
     "inline-flex items-center justify-center rounded-full border bg-white/70 text-muted-foreground";
   if (st === "confirmed")
@@ -250,14 +238,6 @@ function StatusMiniIcon({ st }: { st: BookingStatus }) {
   );
 }
 
-function sanitizeFilePart(x: string) {
-  return x
-    .trim()
-    .replace(/\s+/g, "_")
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .slice(0, 50);
-}
-
 export default function DashboardGrid(props: Props) {
   const supabase = useMemo(() => supabaseBrowser(), []);
   const router = useRouter();
@@ -265,60 +245,14 @@ export default function DashboardGrid(props: Props) {
   const [anchor, setAnchor] = useState<string>(props.anchorDate || isoToday());
   const [hallFilter, setHallFilter] = useState<number | "all">("all");
 
-  // ✅ export controls (من / إلى)
-  const [exportFrom, setExportFrom] = useState<string>(props.anchorDate || isoToday());
-  const [exportTo, setExportTo] = useState<string>(props.anchorDate || isoToday());
-
-  // لو تغيّر التاريخ عبر URL (مثلاً عند التنقل بين الشهور) نزامن الـ state
+  // لو تغيّر التاريخ عبر URL نزامن الـ state
   useEffect(() => {
-    if (props.anchorDate && props.anchorDate !== anchor) {
-      setAnchor(props.anchorDate);
-    }
+    if (props.anchorDate && props.anchorDate !== anchor) setAnchor(props.anchorDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.anchorDate]);
 
-  // ✅ أي تغيير للشهر/التاريخ لازم يحدّث URL عشان السيرفر يعيد جلب البيانات لنفس الشهر
   function goToDate(nextISO: string) {
     router.replace(`/dashboard?date=${nextISO}`);
-  }
-
-  async function exportExcelRange() {
-    if (!exportFrom || !exportTo) {
-      alert("حدد تاريخ من وإلى");
-      return;
-    }
-
-    // تأكد ترتيب من/إلى
-    const a = DateTime.fromISO(exportFrom, { zone: BAHRAIN_TZ });
-    const b = DateTime.fromISO(exportTo, { zone: BAHRAIN_TZ });
-    const from = (a <= b ? a : b).toISODate()!;
-    const to = (a <= b ? b : a).toISODate()!;
-
-    const hallParam = hallFilter === "all" ? "" : `&hall_id=${hallFilter}`;
-
-    const res = await fetch(`/api/bookings/export?from=${from}&to=${to}${hallParam}`);
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      alert(j?.error ?? "فشل التصدير");
-      return;
-    }
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-
-    const hallName =
-      hallFilter === "all"
-        ? "all"
-        : (props.halls.find((h) => h.id === hallFilter)?.name ?? `hall_${hallFilter}`);
-
-    const aTag = document.createElement("a");
-    aTag.href = url;
-    aTag.download = `bookings_${sanitizeFilePart(hallName)}_${from}_${to}.xlsx`;
-    document.body.appendChild(aTag);
-    aTag.click();
-    aTag.remove();
-
-    URL.revokeObjectURL(url);
   }
 
   const [myName, setMyName] = useState<string>("");
@@ -364,7 +298,7 @@ export default function DashboardGrid(props: Props) {
     })();
   }, [supabase, props.occurrences]);
 
-  // فلترة حسب الصالة
+  // فلترة حسب الصالة (للعرض فقط)
   const occFiltered = useMemo(() => {
     if (hallFilter === "all") return props.occurrences;
     return props.occurrences.filter((o) => o.hall_id === hallFilter);
@@ -441,31 +375,35 @@ export default function DashboardGrid(props: Props) {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-3 pb-10 pt-4">
-      {/* Header (مرة وحدة فقط) */}
       <Card className="rounded-2xl shadow-sm">
         <CardHeader className="space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <CardTitle className="text-2xl font-extrabold">
-                جدول الحجوزات
-              </CardTitle>
+              <CardTitle className="text-2xl font-extrabold">جدول الحجوزات</CardTitle>
               <div className="text-sm text-muted-foreground mt-1">
                 مستخدم: <span className="font-bold">{myName}</span>
               </div>
             </div>
 
             {/* Desktop actions */}
-            <div className="hidden sm:flex items-center gap-2">
-              <Button asChild className="rounded-xl">
-                <Link href="/bookings/new">إضافة حجز</Link>
-              </Button>
-              <Button asChild variant="secondary" className="rounded-xl">
-                <Link href="/settings">الإعدادات</Link>
-              </Button>
-              <Button asChild variant="outline" className="rounded-xl">
-                <a href="/api/auth/signout">خروج</a>
-              </Button>
-            </div>
+              <div className="hidden sm:flex items-center gap-2">
+                <Button asChild className="rounded-xl">
+                  <Link href="/bookings/new">إضافة حجز</Link>
+                </Button>
+
+                <Button asChild variant="outline" className="rounded-xl">
+                  <Link href="/export">تصدير الحجوزات</Link>
+                </Button>
+
+                <Button asChild variant="secondary" className="rounded-xl">
+                  <Link href="/settings">الإعدادات</Link>
+                </Button>
+
+                <Button asChild variant="outline" className="rounded-xl">
+                  <a href="/api/auth/signout">خروج</a>
+                </Button>
+              </div>
+
 
             {/* Mobile actions */}
             <div className="sm:hidden">
@@ -476,7 +414,6 @@ export default function DashboardGrid(props: Props) {
                   </Button>
                 </DropdownMenuTrigger>
 
-                {/* ✅ مسافة عن حافة الشاشة */}
                 <DropdownMenuContent
                   align="end"
                   sideOffset={10}
@@ -487,6 +424,8 @@ export default function DashboardGrid(props: Props) {
                   <DropdownMenuItem asChild>
                     <Link href="/bookings/new">إضافة حجز</Link>
                   </DropdownMenuItem>
+
+                  {/* ✅ التصدير صار صفحة بروحه */}
                   <DropdownMenuItem asChild>
                     <Link href="/export">تصدير الحجوزات</Link>
                   </DropdownMenuItem>
@@ -507,11 +446,7 @@ export default function DashboardGrid(props: Props) {
 
           {/* Controls */}
           <div className="grid gap-3">
-            <Tabs
-              value={view}
-              onValueChange={(v) => setView(v as ViewMode)}
-              className="w-full"
-            >
+            <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)} className="w-full">
               <TabsList className="grid w-full grid-cols-3 rounded-2xl">
                 <TabsTrigger value="month">شهري</TabsTrigger>
                 <TabsTrigger value="week">أسبوعي</TabsTrigger>
@@ -519,13 +454,10 @@ export default function DashboardGrid(props: Props) {
               </TabsList>
             </Tabs>
 
-            {/* ✅ صارت 4 أعمدة (نفس التصميم تقريبًا، مع عمود إضافي للتصدير) */}
-            <div className="grid gap-3 sm:grid-cols-4">
+            {/* ✅ رجعناها 3 أعمدة مثل قبل (بدون تصدير) */}
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="min-w-0 w-full">
-                <div className="text-sm font-semibold mb-1 text-right">
-                  اختر تاريخ
-                </div>
-
+                <div className="text-sm font-semibold mb-1 text-right">اختر تاريخ</div>
                 <div className="w-full max-w-full overflow-hidden">
                   <Input
                     dir="ltr"
@@ -541,9 +473,7 @@ export default function DashboardGrid(props: Props) {
                 <div className="text-sm font-semibold mb-1">فلتر الصالة</div>
                 <Select
                   value={hallFilter === "all" ? "all" : String(hallFilter)}
-                  onValueChange={(v) =>
-                    setHallFilter(v === "all" ? "all" : Number(v))
-                  }
+                  onValueChange={(v) => setHallFilter(v === "all" ? "all" : Number(v))}
                 >
                   <SelectTrigger className="rounded-xl">
                     <SelectValue placeholder="اختر" />
@@ -559,59 +489,14 @@ export default function DashboardGrid(props: Props) {
                 </Select>
               </div>
 
-              {/* ✅ تصدير من/إلى + زر */}
-              <div className="min-w-0 sm:col-span-2">
-                <div className="text-sm font-semibold mb-1 text-right">
-                  تصدير (من / إلى)
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    dir="ltr"
-                    type="date"
-                    value={exportFrom}
-                    onChange={(e) => setExportFrom(e.target.value)}
-                    className="rounded-xl text-center"
-                  />
-                  <Input
-                    dir="ltr"
-                    type="date"
-                    value={exportTo}
-                    onChange={(e) => setExportTo(e.target.value)}
-                    className="rounded-xl text-center"
-                  />
-                </div>
-
-                <Button
-                  onClick={exportExcelRange}
-                  className="rounded-xl w-full mt-2"
-                  variant="outline"
-                >
-                  تصدير Excel
-                </Button>
-              </div>
-
-              {/* Navigation buttons (تحت في الموبايل، وعلى نفس السطر في الديسكتوب حسب المساحة) */}
-              <div className="flex items-end gap-2 sm:col-span-4">
-                <Button
-                  variant="outline"
-                  className="rounded-xl flex-1"
-                  onClick={navPrev}
-                >
+              <div className="flex items-end gap-2">
+                <Button variant="outline" className="rounded-xl flex-1" onClick={navPrev}>
                   السابق
                 </Button>
-                <Button
-                  variant="secondary"
-                  className="rounded-xl flex-1"
-                  onClick={navToday}
-                >
+                <Button variant="secondary" className="rounded-xl flex-1" onClick={navToday}>
                   اليوم
                 </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-xl flex-1"
-                  onClick={navNext}
-                >
+                <Button variant="outline" className="rounded-xl flex-1" onClick={navNext}>
                   القادم
                 </Button>
               </div>
@@ -628,9 +513,7 @@ export default function DashboardGrid(props: Props) {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div className="font-bold">{monthTitle}</div>
-                <div className="text-xs text-muted-foreground">
-                  اضغط على اليوم لعرض التفاصيل
-                </div>
+                <div className="text-xs text-muted-foreground">اضغط على اليوم لعرض التفاصيل</div>
               </div>
             </CardHeader>
 
@@ -646,13 +529,11 @@ export default function DashboardGrid(props: Props) {
                   const kinds = sum?.kinds || [];
                   const hasAny = statuses.length > 0;
 
-                  // أكثر نوع تكراراً
                   let label = "";
                   let short = "";
                   if (kinds.length > 0) {
                     const counts = new Map<BookingType, number>();
-                    for (const k of kinds)
-                      counts.set(k, (counts.get(k) || 0) + 1);
+                    for (const k of kinds) counts.set(k, (counts.get(k) || 0) + 1);
 
                     let best: BookingType = kinds[0];
                     let bestN = 0;
@@ -691,7 +572,6 @@ export default function DashboardGrid(props: Props) {
 
                       {hasAny ? (
                         <div className="w-full flex justify-center">
-                          {/* ✅ موبايل: دائرة صغيرة بحرف واحد (بدون ellipsis) */}
                           <span
                             className={[
                               "inline-flex items-center justify-center",
@@ -703,9 +583,7 @@ export default function DashboardGrid(props: Props) {
                             title={label}
                           >
                             <span className="sm:hidden">{short}</span>
-                            <span className="hidden sm:inline truncate max-w-[72px]">
-                              {label}
-                            </span>
+                            <span className="hidden sm:inline truncate max-w-[72px]">{label}</span>
                           </span>
                         </div>
                       ) : (
@@ -734,165 +612,147 @@ export default function DashboardGrid(props: Props) {
                       </Badge>
                     </div>
                     {view === "week" && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        عرض أسبوعي (قائمة)
-                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">عرض أسبوعي (قائمة)</div>
                     )}
                   </CardHeader>
 
                   <CardContent className="grid gap-3 p-3 pt-0">
-                    {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map(
-                      (d) => (
-                        <Card key={`${h.id}_${d}`} className="rounded-2xl">
-                          <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between gap-2 min-w-0">
-                              <div className="font-bold truncate min-w-0">
-                                {fmtDayHuman(d)}
-                              </div>
-                              <div className="text-xs text-muted-foreground whitespace-nowrap">
-                                {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).toFormat(
-                                  "dd LLL yyyy"
-                                )}
-                              </div>
+                    {(view === "day" ? [anchor] : viewDays.slice(0, 7)).map((d) => (
+                      <Card key={`${h.id}_${d}`} className="rounded-2xl">
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <div className="font-bold truncate min-w-0">{fmtDayHuman(d)}</div>
+                            <div className="text-xs text-muted-foreground whitespace-nowrap">
+                              {DateTime.fromISO(d, { zone: BAHRAIN_TZ }).toFormat("dd LLL yyyy")}
                             </div>
-                          </CardHeader>
+                          </div>
+                        </CardHeader>
 
-                          <CardContent className="grid gap-3 p-3 pt-0">
-                            {props.slots.map((s) => {
-                              const key = `${d}__${h.id}__${s.id}`;
-                              const list = occMap.get(key) || [];
-                              const has = list.length > 0;
+                        <CardContent className="grid gap-3 p-3 pt-0">
+                          {props.slots.map((s) => {
+                            const key = `${d}__${h.id}__${s.id}`;
+                            const list = occMap.get(key) || [];
+                            const has = list.length > 0;
 
-                              return (
-                                <Card key={s.id} className="rounded-2xl">
-                                  <CardHeader className="pb-2">
-                                    <div className="flex items-center justify-between gap-2 min-w-0">
-                                      <div className="font-extrabold truncate min-w-0">
-                                        {s.name}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground whitespace-nowrap">
-                                        {s.start_time} - {s.end_time}
-                                      </div>
+                            return (
+                              <Card key={s.id} className="rounded-2xl">
+                                <CardHeader className="pb-2">
+                                  <div className="flex items-center justify-between gap-2 min-w-0">
+                                    <div className="font-extrabold truncate min-w-0">{s.name}</div>
+                                    <div className="text-xs text-muted-foreground whitespace-nowrap">
+                                      {s.start_time} - {s.end_time}
                                     </div>
-                                  </CardHeader>
+                                  </div>
+                                </CardHeader>
 
-                                  <CardContent className="grid gap-2 p-3 pt-0">
-                                    {!has && (
-                                      <div className="text-sm text-muted-foreground">
-                                        لا توجد حجوزات في هذه الفترة.
-                                      </div>
-                                    )}
+                                <CardContent className="grid gap-2 p-3 pt-0">
+                                  {!has && (
+                                    <div className="text-sm text-muted-foreground">
+                                      لا توجد حجوزات في هذه الفترة.
+                                    </div>
+                                  )}
 
-                                    {has &&
-                                      list.map((o) => {
-                                        const st = occStatus(o);
-                                        const kind = occType(o);
-                                        const tone = dayToneByStatus([st]);
-                                        const who = o.created_by
-                                          ? creatorNames[o.created_by] ||
-                                            o.created_by
+                                  {has &&
+                                    list.map((o) => {
+                                      const st = occStatus(o);
+                                      const kind = occType(o);
+                                      const tone = dayToneByStatus([st]);
+                                      const who = o.created_by
+                                        ? creatorNames[o.created_by] || o.created_by
+                                        : "";
+                                      const amt = occAmount(o);
+
+                                      const clientLineParts: string[] = [];
+                                      if (o.client_name) clientLineParts.push(o.client_name);
+                                      else if (o.client_phone) clientLineParts.push(o.client_phone);
+
+                                      const clientLine =
+                                        clientLineParts.length > 0
+                                          ? `العميل: ${clientLineParts.join(" ")}`
                                           : "";
-                                        const amt = occAmount(o);
 
-                                        const clientLineParts: string[] = [];
-                                        if (o.client_name)
-                                          clientLineParts.push(o.client_name);
-                                        else if (o.client_phone)
-                                          clientLineParts.push(o.client_phone);
+                                      const amountPart =
+                                        typeof amt === "number" ? ` - ${amt} د.ب` : "";
 
-                                        const clientLine =
-                                          clientLineParts.length > 0
-                                            ? `العميل: ${clientLineParts.join(
-                                                " "
-                                              )}`
-                                            : "";
-
-                                        const amountPart =
-                                          typeof amt === "number"
-                                            ? ` - ${amt} د.ب`
-                                            : "";
-
-                                        return (
-                                          <div
-                                            key={o.id}
-                                            className={[
-                                              "rounded-2xl border ring-1",
-                                              "w-full max-w-full overflow-hidden",
-                                              "p-2.5",
-                                              tone.bg,
-                                              tone.border,
-                                              tone.ring,
-                                            ].join(" ")}
-                                          >
-                                            <div className="flex items-start justify-between gap-2">
-                                              <div className="min-w-0 flex-1">
-                                                <div className="flex items-start gap-2 min-w-0">
-                                                  <div className="font-extrabold text-[15px] leading-snug truncate min-w-0">
-                                                    {occTitle(o)}
-                                                  </div>
-                                                  <div className="shrink-0 mt-[2px]">
-                                                    <StatusMiniIcon st={st} />
-                                                  </div>
+                                      return (
+                                        <div
+                                          key={o.id}
+                                          className={[
+                                            "rounded-2xl border ring-1",
+                                            "w-full max-w-full overflow-hidden",
+                                            "p-2.5",
+                                            tone.bg,
+                                            tone.border,
+                                            tone.ring,
+                                          ].join(" ")}
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex items-start gap-2 min-w-0">
+                                                <div className="font-extrabold text-[15px] leading-snug truncate min-w-0">
+                                                  {occTitle(o)}
                                                 </div>
+                                                <div className="shrink-0 mt-[2px]">
+                                                  <StatusMiniIcon st={st} />
+                                                </div>
+                                              </div>
 
-                                                {(clientLine || amountPart) && (
-                                                  <div className="text-xs text-muted-foreground mt-0.5 break-words">
-                                                    {clientLine}
-                                                    {amountPart}
-                                                  </div>
-                                                )}
+                                              {(clientLine || amountPart) && (
+                                                <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                                                  {clientLine}
+                                                  {amountPart}
+                                                </div>
+                                              )}
 
-                                                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                                                  <span className="inline-flex items-center rounded-full bg-white/60 border px-2 py-0.5 font-bold">
-                                                    {kindLabel(kind)}
+                                              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                                                <span className="inline-flex items-center rounded-full bg-white/60 border px-2 py-0.5 font-bold">
+                                                  {kindLabel(kind)}
+                                                </span>
+
+                                                {who ? (
+                                                  <span className="text-muted-foreground">
+                                                    بواسطة: {who}
                                                   </span>
+                                                ) : null}
 
-                                                  {who ? (
-                                                    <span className="text-muted-foreground">
-                                                      بواسطة: {who}
-                                                    </span>
-                                                  ) : null}
-
-                                                  {o.client_phone &&
-                                                  !o.client_name ? (
-                                                    <span className="text-muted-foreground">
-                                                      • {o.client_phone}
-                                                    </span>
-                                                  ) : null}
-                                                </div>
-
-                                                {o.notes ? (
-                                                  <div className="text-sm mt-2 whitespace-pre-wrap break-words">
-                                                    {o.notes}
-                                                  </div>
+                                                {o.client_phone && !o.client_name ? (
+                                                  <span className="text-muted-foreground">
+                                                    • {o.client_phone}
+                                                  </span>
                                                 ) : null}
                                               </div>
 
-                                              <Button
-                                                asChild
-                                                size="icon"
-                                                variant="outline"
-                                                className="rounded-xl h-9 w-9 shrink-0"
-                                              >
-                                                <Link
-                                                  href={`/bookings/${o.booking_id}/edit`}
-                                                  aria-label="تعديل"
-                                                >
-                                                  <IconPencil className="h-4 w-4" />
-                                                </Link>
-                                              </Button>
+                                              {o.notes ? (
+                                                <div className="text-sm mt-2 whitespace-pre-wrap break-words">
+                                                  {o.notes}
+                                                </div>
+                                              ) : null}
                                             </div>
+
+                                            <Button
+                                              asChild
+                                              size="icon"
+                                              variant="outline"
+                                              className="rounded-xl h-9 w-9 shrink-0"
+                                            >
+                                              <Link
+                                                href={`/bookings/${o.booking_id}/edit`}
+                                                aria-label="تعديل"
+                                              >
+                                                <IconPencil className="h-4 w-4" />
+                                              </Link>
+                                            </Button>
                                           </div>
-                                        );
-                                      })}
-                                  </CardContent>
-                                </Card>
-                              );
-                            })}
-                          </CardContent>
-                        </Card>
-                      )
-                    )}
+                                        </div>
+                                      );
+                                    })}
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </CardContent>
+                      </Card>
+                    ))}
                   </CardContent>
                 </Card>
               ))}
