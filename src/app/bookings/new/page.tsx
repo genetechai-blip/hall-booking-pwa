@@ -21,7 +21,7 @@ const BAHRAIN_TZ = "Asia/Bahrain";
 type Hall = { id: number; name: string };
 type Slot = { id: number; name: string; start_time?: string; end_time?: string };
 
-type BookingType = "death" | "mawlid" | "fatiha" | "wedding" | "special";
+type BookingType = "death" | "mawlid" | "fatiha" | "wedding" | "event" | "special";
 type BookingStatus = "confirmed" | "hold" | "cancelled";
 
 function isoToday() {
@@ -301,6 +301,7 @@ export default function NewBookingPage() {
                 <SelectItem value="fatiha">فاتحة</SelectItem>
                 <SelectItem value="wedding">زواج</SelectItem>
                 <SelectItem value="special">خاصة</SelectItem>
+                <SelectItem value="event">فعالية</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -1,6 +1,13 @@
 // src/lib/types.ts
 
-export type BookingType = "death" | "mawlid" | "fatiha" | "wedding" | "special";
+export type BookingType =
+  | "death"
+  | "mawlid"
+  | "fatiha"
+  | "wedding"
+  | "event"     // ✅ فعالية
+  | "special";
+
 export type BookingStatus = "hold" | "confirmed" | "cancelled";
 
 export type Hall = {

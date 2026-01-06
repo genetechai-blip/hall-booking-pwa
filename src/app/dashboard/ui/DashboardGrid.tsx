@@ -60,6 +60,8 @@ function kindLabel(kind: BookingType | null | undefined) {
       return "فاتحة";
     case "wedding":
       return "زواج";
+    case "event":
+      return "فعالية";
     default:
       return "خاصة";
   }
@@ -76,6 +78,8 @@ function kindShortLabel(kind: BookingType | null | undefined) {
       return "ف";
     case "wedding":
       return "ز";
+    case "event":
+      return "ع"; // ✅ اختصار فعالية
     default:
       return "خ";
   }
