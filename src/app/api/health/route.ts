@@ -7,11 +7,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const supabase = supabaseServer();
 
-  // استعلام خفيف جداً: جيب صف واحد فقط
   const { data, error } = await supabase
     .from("halls")
-    .select("id")
-    .limit(1);
+    .select("id"); // يرجع قائمة ids
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
@@ -19,6 +17,6 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
-    halls_has_data: (data?.length ?? 0) > 0,
+    halls_count: data?.length ?? 0,
   });
 }
