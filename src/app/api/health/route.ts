@@ -9,7 +9,7 @@ export async function GET() {
 
   // استعلام خفيف جداً (بدون بيانات حساسة)
   const { count, error } = await supabase
-    .from("time_slots")
+    .from("halls")
     .select("id", { count: "exact", head: true });
 
   if (error) {
